@@ -22,7 +22,7 @@ npm install nebjs-validator
 ```
 
 ## Getting started
-```
+```javascript
 // Import the model class object
 const {Schema: ValidatorSchema} = require('nebjs-validator');
 // Validation model (JSON SCHEMA)

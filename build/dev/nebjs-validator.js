@@ -165,81 +165,61 @@ const arrCopy = nebUtil.array.copy;
  *  schemasStack: {}, 模型栈
  *  dataStack: {}, 数据栈
  *  upStackItem: {}, 指向上级有关栈元素
- *  schemasFrom: {}, 模型
+ *  schemaFrom: {}, 模型
  *  errors: [], 错误
  *  data: {}, 数据
  *  dataFrom: {}, 数据来源
  *  dataName: '', 数据来源属性名称
  * }
  *
- // 模型栈结构: keyword, schemas, schema, schemaIndex: i, schemaFrom, keyPath, upStackItem, errors, state, schemasFrom, schemaFromIndex, dataNum, dataIndex
+ // 模型栈结构: keyword, schema, schemaFrom, keyPath, upStackItem, childStackItems, errors, state, dataNum, dataIndex
  // 数据栈结构: dataName, data, dataFrom, dataPath
  */
 const schemaProperties = function (props) {
-  const { schemasStack, upStackItem = null, dataStack, dataFrom = null, dataName } = props,
+  const { schemasStack, upStackItem = null, dataStack, dataFrom = null, dataName, data } = props,
         upKeyPath = upStackItem ? upStackItem.keyPath + '/' + upStackItem.keyword : '';
-  let { schemasFrom, data } = props;
-  // schemasFrom: [{required: ['xxx', 'xxx'], type: ['xxx', 'xxx']}]
+  let { schemaFrom } = props;
   let doIt = false;
-  if (!Array.isArray(schemasFrom)) schemasFrom = [schemasFrom];
-  const schemasFromLen = schemasFrom.length;
-  if (schemasFromLen > 0) {
-    const schemaLen = schemasStack.length;
-    // schemaFrom: {required: ['xxx', 'xxx'], type: ['xxx', 'xxx']}
-    for (let i = 0; i < schemasFromLen; ++i) {
-      const schemaFrom = schemasFrom[i];
-      if (schemaFrom && schemaFrom.constructor === Object) {
-        for (const key of keys.regKeys) {
-          // keyword: required/types..
-          const keyword = key.name;
-          // schemas: ['xxx', 'xxx']
-          const rawSchema = schemaFrom[keyword];
-          if (rawSchema !== undefined) {
-            const option = keys.regKeywords[keyword].option,
-                  { schema } = option,
-                  { merge, only } = schema;
-            let schemas = only ? [rawSchema] : Array.isArray(rawSchema) ? rawSchema : [rawSchema];
-            const keyPath = data !== undefined ? upKeyPath + (dataName !== undefined ? '/' + dataName : '') : upKeyPath;
-            if (merge) {
-              const dataIndex = data !== undefined ? dataStack.length : upStackItem ? upStackItem.dataIndex : dataStack.length - 1,
-                    stkItem = {
-                keyword, schemas, schema: schemas, schemaIndex: null, schemaFrom, rawSchema, keyPath, upStackItem, childStackItems: [], errors: [], state: 0,
-                schemasFrom: schemasFrom, schemaFromIndex: i, dataNum: 0, dataIndex
-              };
+  if (schemaFrom) {
+    const isArr = Array.isArray(schemaFrom) && schemaFrom.length > 0,
+          isObj = schemaFrom.constructor === Object;
+    if (isArr || isObj) {
+      const schemaLen = schemasStack.length;
+      if (isObj) schemaFrom = [schemaFrom];
+      const schLen = schemaFrom.length;
+      for (let i = 0; i < schLen; ++i) {
+        const schFrom = schemaFrom[i];
+        if (schFrom && schFrom.constructor === Object) {
+          for (const key of keys.regKeys) {
+            const keyword = key.name;
+            let rawSchema = schFrom[keyword];
+            if (rawSchema !== undefined) {
+              const { array } = keys.regKeywords[keyword].option.schema;
+              const schema = array && !Array.isArray(rawSchema) ? [rawSchema] : rawSchema;
+              const keyPath = data !== undefined ? upKeyPath + (dataName !== undefined ? '/' + dataName : '') : upKeyPath;
+              const dataIndex = data !== undefined ? dataStack.length : upStackItem ? upStackItem.dataIndex : dataStack.length - 1;
+              const stkItem = { keyword, schema, rawSchema, schFrom, keyPath, upStackItem, childStackItems: [], errors: [], state: 0, dataNum: 0, dataIndex };
+              if (isArr) stkItem.schemaFromIndex = i;
               if (upStackItem) upStackItem.childStackItems.push(stkItem);
               schemasStack.push(stkItem);
-            } else {
-              const schemasLen = schemas.length;
-              if (schemasLen > 0) {
-                const dataIndex = data !== undefined ? dataStack.length : dataStack.length - 1;
-                for (let j = 0; j < schemasLen; ++j) {
-                  const schema = schemas[j],
-                        stkItem = {
-                    keyword, schemas, schema, schemaIndex: j, schemaFrom, rawSchema, keyPath, upStackItem, childStackItems: [], errors: [], state: 0,
-                    schemasFrom: schemasFrom, schemaFromIndex: i, dataNum: 0, dataIndex
-                  };
-                  if (upStackItem) upStackItem.childStackItems.push(stkItem);
-                  schemasStack.push(stkItem);
-                }
-              }
             }
           }
         }
       }
-    }
-    if (schemasStack.length > schemaLen) {
-      if (data !== undefined) {
-        let dataPath;
-        if (upStackItem) {
-          const dataStackItem = dataStack[upStackItem.dataIndex];
-          dataPath = dataStackItem.dataPath + '/' + dataStackItem.dataName;
-        } else {
-          dataPath = '';
+      if (schemasStack.length > schemaLen) {
+        if (data !== undefined) {
+          let dataPath;
+          if (upStackItem) {
+            const dataStackItem = dataStack[upStackItem.dataIndex];
+            dataPath = dataStackItem.dataPath + '/' + dataStackItem.dataName;
+          } else {
+            dataPath = '';
+          }
+          dataStack.push({ dataName: dataName !== undefined ? dataName : '', data, dataFrom, dataPath });
+          if (upStackItem) upStackItem.dataNum++;
         }
-        dataStack.push({ dataName: dataName !== undefined ? dataName : '', data, dataFrom, dataPath });
-        if (upStackItem) upStackItem.dataNum++;
+        doIt = true;
       }
-      doIt = true;
     }
   }
   return doIt;
@@ -288,27 +268,26 @@ const validTypes = function (types, data) {
 };
 /**
  * 验证模型
- * @param schemasStack {Array}, 模型栈
- * @param validSchemaStackItem {Object}, 要验证的模型栈片，不传时默认为模型栈的栈顶
+ * @param schemaStackItem {Object}, 要验证的模型栈片，不传时默认为模型栈的栈顶
  */
-const validateSchema = function (schemasStack, validSchemaStackItem) {
-  if (validSchemaStackItem === undefined) validSchemaStackItem = schemasStack[schemasStack.length - 1];
-  const { keyword, schemas, keyPath } = validSchemaStackItem,
-        option = keys.regKeywords[keyword].option,
-        { schema } = option,
-        { valid: schemaValid } = schema;
-  if (schemaValid) {
-    const { types, maxItems, equal, not, value, values } = schemaValid,
-          len = schemas.length;
-    if (maxItems > 0 && len > maxItems) throw new TypeError('scheme error, keyword\'s values invalid at "' + keyPath + keyword + '" by maxItem');
-    for (let i = 0; i < len; ++i) {
-      const val = schemas[i];
-      if (types.length > 0 && !validTypes(types, val)) throw new TypeError('scheme error, keyword\'s values invalid at "' + keyPath + keyword + '" by types');
-      if (equal.length > 0 && !equal.includes(val)) throw new TypeError('scheme error, keyword\'s values invalid at "' + keyPath + keyword + '" by equal');
-      if (not.length > 0 && not.includes(val)) throw new TypeError('scheme error, keyword\'s values invalid at "' + keyPath + keyword + '" by not');
-      if (value && !value.call(this, schemasStack, val, i)) throw new TypeError('scheme error, keyword\'s values invalid at "' + keyPath + keyword + '" by value');
-      if (values && !values.call(this, schemasStack)) throw new TypeError('scheme error, keyword\'s values invalid at "' + keyPath + keyword + '" by values');
+const validateSchema = function (schemaStackItem) {
+  const { keyword, schema, keyPath } = schemaStackItem,
+        { schema: optSchema } = keys.regKeywords[keyword].option,
+        { valid } = optSchema;
+  if (valid) {
+    const { array } = optSchema,
+          { types, value } = valid;
+    if (types.length > 0) {
+      let isValid = false;
+      if (array) {
+        const len = schema.length;
+        for (let i = 0; i < len; ++i) {
+          isValid = validTypes(types, schema[i]);
+        }
+      } else isValid = validTypes(types, schema);
+      if (!isValid) throw new TypeError('scheme error, keyword\'s values invalid at "' + keyPath + keyword + '" by types');
     }
+    if (value && !value.call(this, schema)) throw new TypeError('scheme error, keyword\'s value invalid at "' + keyPath + '/' + keyword + '" by value');
   }
 };
 
@@ -323,7 +302,7 @@ const validate = function (data) {
         schemasStack = [],
         dataStack = [],
         schemas = this.schemas;
-  schemaProperties({ schemasStack, dataStack, schemasFrom: schemas, data, dataFrom: null });
+  schemaProperties({ schemasStack, dataStack, schemaFrom: schemas, data, dataFrom: null });
   while (schemasStack.length > 0) {
     const schemaStackItem = schemasStack[schemasStack.length - 1],
           { keyword } = schemaStackItem,
@@ -333,19 +312,13 @@ const validate = function (data) {
     if (!(state < 0)) {
       const { data } = option,
             { valid: dataValid } = data;
-      if (state === 0) validateSchema(schemasStack, schemaStackItem);
+      if (state === 0) validateSchema(schemaStackItem);
       if (dataValid) {
         dataValid.call(this, schemasStack, dataStack);
         state = schemaStackItem.state;
-        if (state < 0) {
-          pop = true;
-        }
-      } else {
-        pop = true;
-      }
-    } else {
-      pop = true;
-    }
+        if (state < 0) pop = true;
+      } else pop = true;
+    } else pop = true;
     if (pop) {
       const { upStackItem, errors: itemErrors, dataNum: itemDataNum } = schemaStackItem;
       if (state === -1 && itemErrors.length > 0) {
@@ -366,56 +339,6 @@ const validate = function (data) {
   return errors.length === 0;
 };
 module.exports = { validate, schemaProperties };
-
-/**
- * 遍历属性中的所有KEY并转入栈中，待进一步处理..
- * @param props {Object}
- * {
- *  schemasStack: {}, 模型栈
- *  dataStack: {}, 数据栈
- *  upStackItem: {}, 指向上级有关栈元素
- *  schemas: {}, 模型
- *  keyPath: '',  模型路径
- *  errors: [], 错误,
- *  dataFrom: {}, 数据
- *  dataName: '',
- *  dataPath: '',
- *  data: {}
- * }
- */
-/*const createProperties = function (props) {
-  const {schemasStack, upStackItem = null, keyPath = '', errors = [], dataStack} = props;
-  let {schemas: schemasFrom} = props;
-  if (schemasFrom) {
-    if (!Array.isArray(schemasFrom)) schemasFrom = [schemasFrom];
-    if (schemasFrom.length > 0) {
-      const schemaLen = schemasStack.length;
-      // schemasFrom: [{required: ['xxx', 'xxx'], type: ['xxx', 'xxx']}]
-      for (const schemaFrom of schemasFrom) {
-        // schemaFrom: {required: ['xxx', 'xxx'], type: ['xxx', 'xxx']}
-        if (schemaFrom && schemaFrom.constructor === Object) {
-          for (const key of keys.regKeys) {
-            // keyword: required/types..
-            const keyword = key.name/!*, topStack = schemasStack.length > 0 ? schemasStack[schemasStack.length - 1] : null*!/;
-            // schemas: ['xxx', 'xxx']
-            let schemas = schemaFrom[keyword];
-            if (schemas !== undefined) {
-              const isArray = Array.isArray(schemas);
-              if (key.isArray && !isArray) throw new TypeError('scheme error, keyword\'s value must be a array');
-              if (!isArray) schemas = [schemas];
-              // tags: 插入新模型
-              schemasStack.push({keyword, schemas, schemaFrom, keyPath, upStackItem, errors, state: 0, dataNum: 0, dataIndex: dataStack.length});
-            }
-          }
-        }
-      }
-      if (schemasStack.length > schemaLen) {
-        const {data} = props;
-        dataStack.push({dataName: '', data, dataFrom: null, dataPath: ''});
-      }
-    }
-  }
-};*/
 
 /***/ }),
 
@@ -462,15 +385,10 @@ const regKeywords = {};
  * [{
  *  name: '', 注册关键字名称
  *  schema: {
- *    merge: true, 合并处理关键字相应的模型值（数组），当为false时，多个模型值将被分成多次处理,
- *    only: false, 只有一个，无论它是什么值，都被转换为[???],
+ *    array: false, 为数组，当不是数组时，自动转换
  *    valid: {// 用于模型验证,
- *      maxItems: 0, 最大元素个数，0代表无穷
  *      types: ['', ..], 注册关键字支持的类型
- *      equal: [], 关键值中的有值包含
- *      not: [], 关键值中的各值不得包含
- *      value: function(schemasStack, val, i){}, 局部关键字值验证器，this指向当前validator实例
- *      values: function(schemasStack){}, 关键字值验证器，this指向当前validator实例
+ *      value: function(val){}, 关键字值验证器，this指向当前validator实例
  *    }
  *  },
  *  data: {
@@ -485,10 +403,7 @@ const registerKeywords = function (keywords) {
   let num = 0;
   for (const keyword of keywords) {
     if (!(keyword && keyword.constructor === Object)) throw new TypeError('keyword must be a object');
-    const regKey = objCopy({
-      schema: { merge: true, only: false, valid: { maxItems: 0, types: [], equal: [], not: [], valueValid: null, valuesValid: null } },
-      data: { valid: null }, ext: {}
-    }, keyword, { deep: true });
+    const regKey = objCopy({ schema: { array: false, valid: { types: [], value: null } }, data: { valid: null }, ext: {} }, keyword, { deep: true });
     let { name, schema, data, ext } = regKey;
     if (!(name && typeof name === 'string' && (name = trimString(name)).length > 0)) throw new TypeError('keyword\'s name must be a non-empty string');
     regKey.name = name;
@@ -496,25 +411,20 @@ const registerKeywords = function (keywords) {
     if (mapVal) throw new TypeError('keyword ' + name + ' have already registered');
     if (schema.constructor !== Object) throw new TypeError('keyword ' + name + ' \'s schema must be a object');
     if (data.constructor !== Object) throw new TypeError('keyword ' + name + ' \'s data must be a object');
-    const { merge: mergeSchema, only: schemaOnly, valid: schemaValid } = schema;
-    if (mergeSchema !== true && mergeSchema !== false) throw new TypeError('keyword ' + name + ' \'s schema.merge must be a boolean');
-    if (schemaOnly !== true && schemaOnly !== false) throw new TypeError('keyword ' + name + ' \'s schema.only must be a boolean');
-    if (schemaValid) {
-      if (schemaValid.constructor !== Object) throw new TypeError('keyword ' + name + '\'s schema.valid must be a object');
-      const { maxItems, types, equal, not, value, values } = schemaValid;
-      if (!(typeof maxItems === 'number' && maxItems >= 0 && maxItems % 1 === 0)) throw new TypeError('keyword ' + name + '\'s schema.valid.maxItems must be a non-negative integer');
+    const { array, valid: valid } = schema;
+    if (array !== true && array !== false) throw new TypeError('keyword ' + name + ' \'s schema.array must be a boolean');
+    if (valid) {
+      if (valid.constructor !== Object) throw new TypeError('keyword ' + name + '\'s schema.valid must be a object');
+      const { types, value } = valid;
       if (!(types && Array.isArray(types))) throw new TypeError('keyword ' + name + '\'s schema.valid.types must be a array');
-      if (!(equal && Array.isArray(equal))) throw new TypeError('keyword ' + name + '\'s schema.valid.equal must be a array');
-      if (!(not && Array.isArray(not))) throw new TypeError('keyword ' + name + '\'s schema.valid.not must be a array');
       if (value && typeof value !== 'function') throw new TypeError('keyword ' + name + '\'s schema.valid.value must be a function');
-      if (values && typeof values !== 'function') throw new TypeError('keyword ' + name + '\'s schema.valid.values must be a function');
     }
     const { valid: dataValid } = data;
     if (dataValid && typeof dataValid !== 'function') throw new TypeError('keyword ' + name + '\'s dataValid must be a function');
     if (!(ext && ext.constructor === Object)) throw new TypeError('keyword ' + name + '\'s ext must be a object');
     mapVal = regKeywords[name] = { option: regKey };
-    regKeys.push(regKey);
     mapVal.index = regKeys.length;
+    regKeys.push(regKey);
     num++;
   }
   return num;
@@ -552,10 +462,10 @@ const { schemaProperties } = __webpack_require__(/*! ../common */ "./lib/common.
 const dataValid = function (schemasStack, dataStack) {
   // 方案一：全部检测完再判断
   const schemaStackItem = schemasStack[schemasStack.length - 1] /*, dataStackItem = dataStack[schemaStackItem.dataIndex]*/;
-  const { state, runSchemaIndex, schemas } = schemaStackItem;
+  const { state, runSchemaIndex, schema } = schemaStackItem;
   switch (state) {
     case 0:
-      if (schemas.length === 0) {
+      if (schema.length === 0) {
         schemaStackItem.state = -1;
       } else {
         schemaStackItem.runSchemaIndex = 0;
@@ -564,14 +474,14 @@ const dataValid = function (schemasStack, dataStack) {
       }
       break;
     case 1:
-      schemaProperties({ schemasStack, dataStack, schemasFrom: schemas[runSchemaIndex], upStackItem: schemaStackItem });
+      schemaProperties({ schemasStack, dataStack, schemaFrom: schema[runSchemaIndex], upStackItem: schemaStackItem });
       schemaStackItem.runSchemaIndex++;
       schemaStackItem.state++;
       break;
     case 2:
       schemaStackItem.runSchemaErrors.push(schemaStackItem.errors);
       schemaStackItem.errors = [];
-      if (runSchemaIndex < schemas.length) {
+      if (runSchemaIndex < schema.length) {
         schemaStackItem.state--;
       } else {
         let haveErr = false;
@@ -593,10 +503,10 @@ const dataValid = function (schemasStack, dataStack) {
   }
   // 方案二：检测到错误即结束
   /*const schemaStackItem = schemasStack[schemasStack.length - 1]/!*, dataStackItem = dataStack[schemaStackItem.dataIndex]*!/;
-  const {state, runSchemaIndex, schemas} = schemaStackItem;
+  const {state, runSchemaIndex, schema} = schemaStackItem;
   switch (state) {
     case 0:
-      if (schemas.length === 0) {
+      if (schema.length === 0) {
         schemaStackItem.state = -1;
       } else {
         schemaStackItem.runSchemaIndex = 0;
@@ -604,7 +514,7 @@ const dataValid = function (schemasStack, dataStack) {
       }
       break;
     case 1:
-      schemaProperties({schemasStack, dataStack, schemasFrom: schemas[runSchemaIndex], upStackItem: schemaStackItem});
+      schemaProperties({schemasStack, dataStack, schemaFrom: schema[runSchemaIndex], upStackItem: schemaStackItem});
       schemaStackItem.runSchemaIndex++;
       schemaStackItem.state++;
       break;
@@ -612,7 +522,7 @@ const dataValid = function (schemasStack, dataStack) {
       if (schemaStackItem.errors.length > 0) {
         schemaStackItem.errors = [Object.assign({}, schemaStackItem)];
         schemaStackItem.state = -1;
-      } else if (runSchemaIndex === schemas.length) {
+      } else if (runSchemaIndex === schema.length) {
         schemaStackItem.state = -1;
       } else {
         schemaStackItem.state--;
@@ -620,7 +530,7 @@ const dataValid = function (schemasStack, dataStack) {
       break;
   }*/
 };
-const properties = [{ name: 'allOf', schema: { valid: { types: ['object'] } }, data: { valid: dataValid } }];
+const properties = [{ name: 'allOf', schema: { array: true, valid: { types: ['object'] } }, data: { valid: dataValid } }];
 module.exports = properties;
 
 /***/ }),
@@ -644,10 +554,10 @@ const { schemaProperties } = __webpack_require__(/*! ../common */ "./lib/common.
 const dataValid = function (schemasStack, dataStack) {
   // 检测到任何错误即结束
   const schemaStackItem = schemasStack[schemasStack.length - 1] /*, dataStackItem = dataStack[schemaStackItem.dataIndex]*/;
-  const { state, runSchemaIndex, schemas } = schemaStackItem;
+  const { state, runSchemaIndex, schema } = schemaStackItem;
   switch (state) {
     case 0:
-      if (schemas.length === 0) {
+      if (schema.length === 0) {
         schemaStackItem.state = -1;
       } else {
         schemaStackItem.runSchemaIndex = 0;
@@ -655,14 +565,14 @@ const dataValid = function (schemasStack, dataStack) {
       }
       break;
     case 1:
-      schemaProperties({ schemasStack, dataStack, schemasFrom: schemas[runSchemaIndex], upStackItem: schemaStackItem });
+      schemaProperties({ schemasStack, dataStack, schemaFrom: schema[runSchemaIndex], upStackItem: schemaStackItem });
       schemaStackItem.runSchemaIndex++;
       schemaStackItem.state++;
       break;
     case 2:
       if (schemaStackItem.errors.length === 0) {
         schemaStackItem.state = -1;
-      } else if (runSchemaIndex === schemas.length) {
+      } else if (runSchemaIndex === schema.length) {
         schemaStackItem.errors = [Object.assign({}, schemaStackItem)];
         schemaStackItem.state = -1;
       } else {
@@ -672,7 +582,7 @@ const dataValid = function (schemasStack, dataStack) {
       break;
   }
 };
-const properties = [{ name: 'anyOf', schema: { valid: { types: ['object'] } }, data: { valid: dataValid } }];
+const properties = [{ name: 'anyOf', schema: { array: true, valid: { types: ['object'] } }, data: { valid: dataValid } }];
 module.exports = properties;
 
 /***/ }),
@@ -696,9 +606,9 @@ const maxItemsDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
+        { schema } = schemaStackItem;
   if (Array.isArray(data)) {
-    if (data.length > schemas[0]) {
+    if (data.length > schema) {
       schemaStackItem.errors.push(schemaStackItem);
     }
   }
@@ -716,18 +626,18 @@ const minItemsDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
+        { schema } = schemaStackItem;
   if (Array.isArray(data)) {
-    if (data.length < schemas[0]) {
+    if (data.length < schema) {
       schemaStackItem.errors.push(schemaStackItem);
     }
   }
   schemaStackItem.state = -1;
 };
-const valid = function (schemasStack, val /*, i*/) {
+const valid = function (val) {
   return val >= 0 && val % 1 === 0;
 };
-const strLength = [{ name: 'maxItems', schema: { only: true, valid: { types: ['number'], value: valid } }, data: { valid: maxItemsDataValid } }, { name: 'minItems', schema: { only: true, valid: { types: ['number'], value: valid } }, data: { valid: minItemsDataValid } }];
+const strLength = [{ name: 'maxItems', schema: { valid: { types: ['number'], value: valid } }, data: { valid: maxItemsDataValid } }, { name: 'minItems', schema: { valid: { types: ['number'], value: valid } }, data: { valid: minItemsDataValid } }];
 module.exports = strLength;
 
 /***/ }),
@@ -753,13 +663,13 @@ const dataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
-  if (!equal(schemas[0], data)) {
+        { schema } = schemaStackItem;
+  if (!equal(schema, data)) {
     schemaStackItem.errors.push(schemaStackItem);
   }
   schemaStackItem.state = -1;
 };
-const consts = [{ name: 'const', schema: { only: true }, data: { valid: dataValid } }];
+const consts = [{ name: 'const', schema: {}, data: { valid: dataValid } }];
 module.exports = consts;
 
 /***/ }),
@@ -783,7 +693,7 @@ const { schemaProperties } = __webpack_require__(/*! ../common */ "./lib/common.
 const dataValid = function (schemasStack, dataStack) {
   // 方案一：全部检测完再判断
   /*const schemaStackItem = schemasStack[schemasStack.length - 1], dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const {data} = dataStackItem, {state, runDataIndex, schemas} = schemaStackItem;
+  const {data} = dataStackItem, {state, runDataIndex, schema} = schemaStackItem;
   switch (state) {
     case 0:
       if (Array.isArray(data)) {
@@ -800,7 +710,7 @@ const dataValid = function (schemasStack, dataStack) {
       }
       break;
     case 1:
-      schemaProperties({schemasStack, dataStack, schemasFrom: schemas, upStackItem: schemaStackItem, data: data[runDataIndex], dataFrom: data, dataName: runDataIndex});
+      schemaProperties({schemasStack, dataStack, schemaFrom: schema, upStackItem: schemaStackItem, data: data[runDataIndex], dataFrom: data, dataName: runDataIndex});
       schemaStackItem.runDataIndex++;
       schemaStackItem.state++;
       break;
@@ -831,7 +741,7 @@ const dataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { state, runDataIndex, schemas } = schemaStackItem;
+        { state, runDataIndex, schema } = schemaStackItem;
   switch (state) {
     case 0:
       if (Array.isArray(data)) {
@@ -847,7 +757,7 @@ const dataValid = function (schemasStack, dataStack) {
       }
       break;
     case 1:
-      schemaProperties({ schemasStack, dataStack, schemasFrom: schemas, upStackItem: schemaStackItem, data: data[runDataIndex], dataFrom: data, dataName: runDataIndex });
+      schemaProperties({ schemasStack, dataStack, schemaFrom: schema, upStackItem: schemaStackItem, data: data[runDataIndex], dataFrom: data, dataName: runDataIndex });
       schemaStackItem.runDataIndex++;
       schemaStackItem.state++;
       break;
@@ -864,7 +774,7 @@ const dataValid = function (schemasStack, dataStack) {
       break;
   }
 };
-const contains = [{ name: 'contains', schema: { only: true, valid: { types: ['object'] } }, data: { valid: dataValid } }];
+const contains = [{ name: 'contains', schema: { valid: { types: ['object'] } }, data: { valid: dataValid } }];
 module.exports = contains;
 
 /***/ }),
@@ -889,13 +799,12 @@ const dataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { state, schemas } = schemaStackItem;
+        { state, schema } = schemaStackItem;
   let doIt;
   switch (state) {
     case 0:
       doIt = false;
       if (data && typeof data === 'object' && !Array.isArray(data)) {
-        const schema = schemas[0];
         if (schema) {
           for (const propName in schema) {
             if (schema.hasOwnProperty(propName) && data.hasOwnProperty(propName)) {
@@ -910,7 +819,7 @@ const dataValid = function (schemasStack, dataStack) {
                 }
                 if (hasError) schemaStackItem.errors.push(schemaStackItem);
               } else if (typeof schema === 'object') {
-                if (schemaProperties({ schemasStack, dataStack, schemasFrom: propSchema, upStackItem: schemaStackItem })) doIt = true;
+                if (schemaProperties({ schemasStack, dataStack, schemaFrom: propSchema, upStackItem: schemaStackItem })) doIt = true;
               }
             }
           }
@@ -927,7 +836,7 @@ const dataValid = function (schemasStack, dataStack) {
       break;
   }
 };
-const dependencies = [{ name: 'dependencies', schema: { only: true, valid: { types: ['object'] } }, data: { valid: dataValid } }];
+const dependencies = [{ name: 'dependencies', schema: { valid: { types: ['object'] } }, data: { valid: dataValid } }];
 module.exports = dependencies;
 
 /***/ }),
@@ -953,9 +862,9 @@ const dataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
+        { schema } = schemaStackItem;
   let valid = false;
-  for (const sch of schemas) {
+  for (const sch of schema) {
     if (equal(sch, data)) {
       valid = true;
       break;
@@ -1114,18 +1023,18 @@ const formatMinimumDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
+        { schema } = schemaStackItem;
   if (typeof data === 'string' && lastFormat) {
     const fnf = formatsNumber[lastFormat];
     if (fnf && typeof fnf === 'function') {
       let ok = false;
       // schemaFrom, keyPath, upStackItem三者有一个相同都代表来自同一个上级，说明是与当前formatMinimum是兄弟的then
-      if (isFormatExclusiveMinimum && lastFormatExclusiveMinimumStackItem.schemaFrom === schemaStackItem.schemaFrom) {
+      if (isFormatExclusiveMinimum && lastFormatExclusiveMinimumStackItem.upStackItem === schemaStackItem.upStackItem) {
         // 大于模式
-        ok = fnf(data) > fnf(schemas[0]);
+        ok = fnf(data) > fnf(schema);
       } else {
         // 大于等于模式
-        ok = fnf(data) >= fnf(schemas[0]);
+        ok = fnf(data) >= fnf(schema);
       }
       if (!ok) {
         schemaStackItem.errors.push(schemaStackItem);
@@ -1146,19 +1055,19 @@ const formatExclusiveMinimumDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
-  const tp = typeof schemas[0];
+        { schema } = schemaStackItem;
+  const tp = typeof schema;
   if (tp === 'string') {
     if (typeof data === 'string' && lastFormat) {
       const fnf = formatsNumber[lastFormat];
       if (fnf && typeof fnf === 'function') {
-        if (fnf(data) <= fnf(schemas[0])) {
+        if (fnf(data) <= fnf(schema)) {
           schemaStackItem.errors.push(schemaStackItem);
         }
       }
     }
   } else {
-    isFormatExclusiveMinimum = schemas[0];
+    isFormatExclusiveMinimum = schema;
     lastFormatExclusiveMinimumStackItem = schemaStackItem;
   }
   schemaStackItem.state = -1;
@@ -1175,18 +1084,18 @@ const formatMaximumDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
+        { schema } = schemaStackItem;
   if (lastFormat && typeof data === 'string') {
     const fnf = formatsNumber[lastFormat];
     if (fnf && typeof fnf === 'function') {
       let ok = false;
       // schemaFrom, keyPath, upStackItem三者有一个相同都代表来自同一个上级，说明是与当前formatMaximum是兄弟的then
-      if (isFormatExclusiveMaximum && lastFormatExclusiveMaximumStackItem.schemaFrom === schemaStackItem.schemaFrom) {
+      if (isFormatExclusiveMaximum && lastFormatExclusiveMaximumStackItem.upStackItem === schemaStackItem.upStackItem) {
         // 小于模式
-        ok = fnf(data) < fnf(schemas[0]);
+        ok = fnf(data) < fnf(schema);
       } else {
         // 小于等于模式
-        ok = fnf(data) <= fnf(schemas[0]);
+        ok = fnf(data) <= fnf(schema);
       }
       if (!ok) {
         schemaStackItem.errors.push(schemaStackItem);
@@ -1207,19 +1116,19 @@ const formatExclusiveMaximumDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
-  const tp = typeof schemas[0];
+        { schema } = schemaStackItem;
+  const tp = typeof schema;
   if (tp === 'number') {
     if (lastFormat && typeof data === 'string') {
       const fnf = formatsNumber[lastFormat];
       if (fnf && typeof fnf === 'function') {
-        if (fnf(data) >= fnf(schemas[0])) {
+        if (fnf(data) >= fnf(schema)) {
           schemaStackItem.errors.push(schemaStackItem);
         }
       }
     }
   } else {
-    isFormatExclusiveMaximum = schemas[0];
+    isFormatExclusiveMaximum = schema;
     lastFormatExclusiveMaximumStackItem = schemaStackItem;
   }
   schemaStackItem.state = -1;
@@ -1236,9 +1145,9 @@ const formatDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
+        { schema } = schemaStackItem;
   if (typeof data === 'string') {
-    const fmt = formats[schemas[0]];
+    const fmt = formats[schema];
     if (fmt) {
       let ok = true;
       if (fmt.constructor === RegExp) {
@@ -1250,7 +1159,7 @@ const formatDataValid = function (schemasStack, dataStack) {
         schemaStackItem.errors.push(schemaStackItem);
         lastFormat = null;
       } else {
-        lastFormat = schemas[0];
+        lastFormat = schema;
       }
     }
   }
@@ -1281,8 +1190,8 @@ const elseDataValid = function (schemasStack, dataStack) {
   const { state } = schemaStackItem;
   switch (state) {
     case 0:
-      if (lastIfSchemaStackItem && lastIfSchemaStackItem.schemaFrom === schemaStackItem.schemaFrom && isErrors) {
-        schemaProperties({ schemasStack, dataStack, schemasFrom: schemaStackItem.schemas, upStackItem: schemaStackItem });
+      if (lastIfSchemaStackItem && lastIfSchemaStackItem.upStackItem === schemaStackItem.upStackItem && isErrors) {
+        schemaProperties({ schemasStack, dataStack, schemaFrom: schemaStackItem.schema, upStackItem: schemaStackItem });
         schemaStackItem.state++;
       } else {
         schemaStackItem.state = -1;
@@ -1304,8 +1213,8 @@ const thenDataValid = function (schemasStack, dataStack) {
   const { state } = schemaStackItem;
   switch (state) {
     case 0:
-      if (lastIfSchemaStackItem && lastIfSchemaStackItem.schemaFrom === schemaStackItem.schemaFrom && !isErrors) {
-        schemaProperties({ schemasStack, dataStack, schemasFrom: schemaStackItem.schemas, upStackItem: schemaStackItem });
+      if (lastIfSchemaStackItem && lastIfSchemaStackItem.upStackItem === schemaStackItem.upStackItem && !isErrors) {
+        schemaProperties({ schemasStack, dataStack, schemaFrom: schemaStackItem.schema, upStackItem: schemaStackItem });
         schemaStackItem.state++;
       } else {
         schemaStackItem.state = -1;
@@ -1327,7 +1236,7 @@ const ifDataValid = function (schemasStack, dataStack) {
   const { state } = schemaStackItem;
   switch (state) {
     case 0:
-      schemaProperties({ schemasStack, dataStack, schemasFrom: schemaStackItem.schemas, upStackItem: schemaStackItem });
+      schemaProperties({ schemasStack, dataStack, schemaFrom: schemaStackItem.schema, upStackItem: schemaStackItem });
       schemaStackItem.state++;
       break;
     case 1:
@@ -1399,9 +1308,8 @@ const additionalItemsDataValid = function (schemasStack, dataStack) {
         { data } = dataStackItem;
   switch (state) {
     case 0:
-      if (lastItemsStackItem && lastItemsStackItem.schemaFrom === schemaStackItem.schemaFrom && additionalLen > 0) {
-        const { schemas } = schemaStackItem,
-              schema = schemas[0];
+      if (lastItemsStackItem && lastItemsStackItem.upStackItem === schemaStackItem.upStackItem && additionalLen > 0) {
+        const { schema } = schemaStackItem;
         if (typeof schema === 'boolean') {
           if (!schema) {
             // 不允许继续了..
@@ -1412,7 +1320,7 @@ const additionalItemsDataValid = function (schemasStack, dataStack) {
           }
         } else {
           for (let i = dataLen - 1; i >= sepLen; --i) {
-            schemaProperties({ schemasStack, dataStack, schemasFrom: schemaStackItem.schemas, upStackItem: schemaStackItem, data: data[i], dataFrom: data, dataName: i });
+            schemaProperties({ schemasStack, dataStack, schemaFrom: schemaStackItem.schema, upStackItem: schemaStackItem, data: data[i], dataFrom: data, dataName: i });
           }
           schemaStackItem.state++;
         }
@@ -1447,16 +1355,16 @@ const itemsDataValid = function (schemasStack, dataStack) {
         if (useSameItem) {
           lastItemsStackItem = null;
           for (let i = dataLen - 1; i >= 0; --i) {
-            schemaProperties({ schemasStack, dataStack, schemasFrom: schemaStackItem.schemas, upStackItem: schemaStackItem, data: data[i], dataFrom: data, dataName: i });
+            schemaProperties({ schemasStack, dataStack, schemaFrom: schemaStackItem.schema[0], upStackItem: schemaStackItem, data: data[i], dataFrom: data, dataName: i });
           }
         } else {
-          const { schemas } = schemaStackItem,
-                itemsLen = schemas.length,
+          const { schema } = schemaStackItem,
+                itemsLen = schema.length,
                 minLen = Math.min(dataLen, itemsLen);
           additionalLen = dataLen - minLen;
           sepLen = dataLen - additionalLen;
           for (let i = sepLen - 1; i >= 0; --i) {
-            schemaProperties({ schemasStack, dataStack, schemasFrom: schemaStackItem.schemas[i], upStackItem: schemaStackItem, data: data[i], dataFrom: data, dataName: i });
+            schemaProperties({ schemasStack, dataStack, schemaFrom: schemaStackItem.schema[i], upStackItem: schemaStackItem, data: data[i], dataFrom: data, dataName: i });
           }
           lastItemsStackItem = schemaStackItem;
         }
@@ -1471,7 +1379,7 @@ const itemsDataValid = function (schemasStack, dataStack) {
       break;
   }
 };
-const items = [{ name: 'additionalItems', schema: { only: true, valid: { types: ['boolean', 'object'] } }, data: { valid: additionalItemsDataValid } }, { name: 'items', schema: { valid: { types: ['object'] } }, data: { valid: itemsDataValid } }];
+const items = [{ name: 'additionalItems', schema: { valid: { types: ['boolean', 'object'] } }, data: { valid: additionalItemsDataValid } }, { name: 'items', schema: { array: true, valid: { types: ['object'] } }, data: { valid: itemsDataValid } }];
 module.exports = items;
 
 /***/ }),
@@ -1496,16 +1404,16 @@ const maximumDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
+        { schema } = schemaStackItem;
   if (typeof data === 'number') {
     let ok = false;
     // schemaFrom, keyPath, upStackItem三者有一个相同都代表来自同一个上级，说明是与当前maximum是兄弟的then
-    if (isExclusiveMaximum && lastExclusiveMaximumStackItem.schemaFrom === schemaStackItem.schemaFrom) {
+    if (isExclusiveMaximum && lastExclusiveMaximumStackItem.upStackItem === schemaStackItem.upStackItem) {
       // 小于模式
-      ok = data < schemas[0];
+      ok = data < schema;
     } else {
       // 小于等于模式
-      ok = data <= schemas[0];
+      ok = data <= schema;
     }
     if (!ok) {
       schemaStackItem.errors.push(schemaStackItem);
@@ -1525,21 +1433,21 @@ const exclusiveMaximumDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
-  const tp = typeof schemas[0];
+        { schema } = schemaStackItem;
+  const tp = typeof schema;
   if (tp === 'number') {
     if (typeof data === 'number') {
-      if (data >= schemas[0]) {
+      if (data >= schema) {
         schemaStackItem.errors.push(schemaStackItem);
       }
     }
   } else {
-    isExclusiveMaximum = schemas[0];
+    isExclusiveMaximum = schema;
     lastExclusiveMaximumStackItem = schemaStackItem;
   }
   schemaStackItem.state = -1;
 };
-const maximum = [{ name: 'maximum', schema: { only: true, valid: { types: ['number'] } }, data: { valid: maximumDataValid } }, { name: 'exclusiveMaximum', schema: { only: true, valid: { types: ['number', 'boolean'] } }, data: { valid: exclusiveMaximumDataValid } }];
+const maximum = [{ name: 'maximum', schema: { valid: { types: ['number'] } }, data: { valid: maximumDataValid } }, { name: 'exclusiveMaximum', schema: { valid: { types: ['number', 'boolean'] } }, data: { valid: exclusiveMaximumDataValid } }];
 module.exports = maximum;
 
 /***/ }),
@@ -1564,16 +1472,15 @@ const minimumDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
+        { schema } = schemaStackItem;
   if (typeof data === 'number') {
     let ok = false;
-    // schemaFrom, keyPath, upStackItem三者有一个相同都代表来自同一个上级，说明是与当前minimum是兄弟的then
-    if (isExclusiveMinimum && lastExclusiveMinimumStackItem.schemaFrom === schemaStackItem.schemaFrom) {
+    if (isExclusiveMinimum && lastExclusiveMinimumStackItem.upStackItem === schemaStackItem.upStackItem) {
       // 大于模式
-      ok = data > schemas[0];
+      ok = data > schema;
     } else {
       // 大于等于模式
-      ok = data >= schemas[0];
+      ok = data >= schema;
     }
     if (!ok) {
       schemaStackItem.errors.push(schemaStackItem);
@@ -1593,21 +1500,21 @@ const exclusiveMinimumDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
-  const tp = typeof schemas[0];
+        { schema } = schemaStackItem;
+  const tp = typeof schema;
   if (tp === 'number') {
     if (typeof data === 'number') {
-      if (data <= schemas[0]) {
+      if (data <= schema) {
         schemaStackItem.errors.push(schemaStackItem);
       }
     }
   } else {
-    isExclusiveMinimum = schemas[0];
+    isExclusiveMinimum = schema;
     lastExclusiveMinimumStackItem = schemaStackItem;
   }
   schemaStackItem.state = -1;
 };
-const minimum = [{ name: 'minimum', schema: { only: true, valid: { types: ['number'] } }, data: { valid: minimumDataValid } }, { name: 'exclusiveMinimum', schema: { only: true, valid: { types: ['number', 'boolean'] } }, data: { valid: exclusiveMinimumDataValid } }];
+const minimum = [{ name: 'minimum', schema: { valid: { types: ['number'] } }, data: { valid: minimumDataValid } }, { name: 'exclusiveMinimum', schema: { valid: { types: ['number', 'boolean'] } }, data: { valid: exclusiveMinimumDataValid } }];
 module.exports = minimum;
 
 /***/ }),
@@ -1631,9 +1538,9 @@ const dataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
+        { schema } = schemaStackItem;
   if (typeof data === 'number') {
-    if (data % schemas[0] !== 0) {
+    if (data % schema !== 0) {
       schemaStackItem.errors.push(schemaStackItem);
     }
   }
@@ -1641,8 +1548,8 @@ const dataValid = function (schemasStack, dataStack) {
 };
 const multipleOf = [{
   name: 'multipleOf', schema: {
-    only: true, valid: {
-      types: ['number'], value(schemasStack, val /*, i*/) {
+    valid: {
+      types: ['number'], value(val) {
         return val > 0;
       }
     }
@@ -1672,23 +1579,24 @@ const dataValid = function (schemasStack, dataStack) {
   switch (state) {
     case 0:
       // 加入not信息
-      schemaProperties({ schemasStack, dataStack, schemasFrom: schemaStackItem.schemas, upStackItem: schemaStackItem });
+      schemaProperties({ schemasStack, dataStack, schemaFrom: schemaStackItem.schema, upStackItem: schemaStackItem });
       schemaStackItem.state++;
       break;
     case 1:
       // 判断not结果
       if (schemaStackItem.errors.length > 0) {
         // 如果有错，删除错误
-        schemaStackItem.errors.splice(0, schemaStackItem.errors.length);
+        // schemaStackItem.errors.splice(0, schemaStackItem.errors.length);
+        schemaStackItem.state = -2; // 置状态小于0，代表已经完成所有的过程
       } else {
         // 如果无错，添加错误...
         schemaStackItem.errors.push(schemaStackItem);
+        schemaStackItem.state = -1; // 置状态小于0，代表已经完成所有的过程
       }
-      schemaStackItem.state = -1; // 置状态小于0，代表已经完成所有的过程
       break;
   }
 };
-const properties = [{ name: 'not', schema: { valid: { types: ['object'] } }, data: { valid: dataValid } }];
+const properties = [{ name: 'not', schema: { array: true, valid: { types: ['object'] } }, data: { valid: dataValid } }];
 module.exports = properties;
 
 /***/ }),
@@ -1712,11 +1620,11 @@ const maxPropertiesDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
+        { schema } = schemaStackItem;
   if (data && typeof data === 'object' && !Array.isArray(data)) {
     let len = 0,
         err = false,
-        min = schemas[0];
+        min = schema;
     for (const n in data) {
       if (data.hasOwnProperty(n)) {
         len++;
@@ -1744,7 +1652,7 @@ const minPropertiesDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
+        { schema } = schemaStackItem;
   if (data && typeof data === 'object' && !Array.isArray(data)) {
     let len = 0;
     for (const n in data) {
@@ -1752,16 +1660,16 @@ const minPropertiesDataValid = function (schemasStack, dataStack) {
         len++;
       }
     }
-    if (len < schemas[0]) {
+    if (len < schema) {
       schemaStackItem.errors.push(schemaStackItem);
     }
   }
   schemaStackItem.state = -1;
 };
-const valid = function (schemasStack, val /*, i*/) {
+const valid = function (val) {
   return val >= 0 && val % 1 === 0;
 };
-const strLength = [{ name: 'maxProperties', schema: { only: true, valid: { types: ['number'], value: valid } }, data: { valid: maxPropertiesDataValid } }, { name: 'minProperties', schema: { only: true, valid: { types: ['number'], value: valid } }, data: { valid: minPropertiesDataValid } }];
+const strLength = [{ name: 'maxProperties', schema: { valid: { types: ['number'], value: valid } }, data: { valid: maxPropertiesDataValid } }, { name: 'minProperties', schema: { valid: { types: ['number'], value: valid } }, data: { valid: minPropertiesDataValid } }];
 module.exports = strLength;
 
 /***/ }),
@@ -1785,10 +1693,10 @@ const { schemaProperties } = __webpack_require__(/*! ../common */ "./lib/common.
 const dataValid = function (schemasStack, dataStack) {
   // 全部检测完再判断
   const schemaStackItem = schemasStack[schemasStack.length - 1] /*, dataStackItem = dataStack[schemaStackItem.dataIndex]*/;
-  const { state, runSchemaIndex, schemas } = schemaStackItem;
+  const { state, runSchemaIndex, schema } = schemaStackItem;
   switch (state) {
     case 0:
-      if (schemas.length === 0) {
+      if (schema.length === 0) {
         schemaStackItem.state = -1;
       } else {
         schemaStackItem.runSchemaIndex = 0;
@@ -1797,14 +1705,14 @@ const dataValid = function (schemasStack, dataStack) {
       }
       break;
     case 1:
-      schemaProperties({ schemasStack, dataStack, schemasFrom: schemas[runSchemaIndex], upStackItem: schemaStackItem });
+      schemaProperties({ schemasStack, dataStack, schemaFrom: schema[runSchemaIndex], upStackItem: schemaStackItem });
       schemaStackItem.runSchemaIndex++;
       schemaStackItem.state++;
       break;
     case 2:
       schemaStackItem.runSchemaErrors.push(schemaStackItem.errors);
       schemaStackItem.errors = [];
-      if (runSchemaIndex < schemas.length) {
+      if (runSchemaIndex < schema.length) {
         schemaStackItem.state--;
       } else {
         let haveOk = false;
@@ -1825,7 +1733,7 @@ const dataValid = function (schemasStack, dataStack) {
       break;
   }
 };
-const properties = [{ name: 'oneOf', schema: { valid: { types: ['object'] } }, data: { valid: dataValid } }];
+const properties = [{ name: 'oneOf', schema: { array: true, valid: { types: ['object'] } }, data: { valid: dataValid } }];
 module.exports = properties;
 
 /***/ }),
@@ -1849,11 +1757,11 @@ const dataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
+        { schema } = schemaStackItem;
   if (typeof data === 'string') {
     let valid = false;
-    for (const schema of schemas) {
-      const pattern = new RegExp(schema);
+    for (const val of schema) {
+      const pattern = new RegExp(val);
       if (pattern) {
         valid = pattern.test(data);
         if (valid) break;
@@ -1865,7 +1773,7 @@ const dataValid = function (schemasStack, dataStack) {
   }
   schemaStackItem.state = -1;
 };
-const pattern = [{ name: 'pattern', schema: { valid: { types: ['string'] } }, data: { valid: dataValid } }];
+const pattern = [{ name: 'pattern', schema: { array: true, valid: { types: ['string'] } }, data: { valid: dataValid } }];
 module.exports = pattern;
 
 /***/ }),
@@ -1889,10 +1797,10 @@ const dataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
+        { schema } = schemaStackItem;
   if (data && typeof data === 'object' && !Array.isArray(data)) {
-    for (const schema of schemas) {
-      const reg = new RegExp(schema);
+    for (const val of schema) {
+      const reg = new RegExp(val);
       if (reg) {
         let hasOk = false;
         for (const name in data) {
@@ -1910,7 +1818,7 @@ const dataValid = function (schemasStack, dataStack) {
   }
   schemaStackItem.state = -1;
 };
-const patternRequired = [{ name: 'patternRequired', schema: { valid: { types: ['string'] } }, data: { valid: dataValid } }];
+const patternRequired = [{ name: 'patternRequired', schema: { array: true, valid: { types: ['string'] } }, data: { valid: dataValid } }];
 module.exports = patternRequired;
 
 /***/ }),
@@ -1937,8 +1845,8 @@ const additionalPropertiesDataValid = function (schemasStack, dataStack) {
   let haveProps, havePatternProps, addProps, addLen;
   switch (state) {
     case 0:
-      haveProps = lastPropertiesStackItem && lastPropertiesStackItem.schemaFrom === schemaStackItem.schemaFrom;
-      havePatternProps = lastPatternPropertiesStackItem && lastPatternPropertiesStackItem.schemaFrom === schemaStackItem.schemaFrom;
+      haveProps = lastPropertiesStackItem && lastPropertiesStackItem.upStackItem === schemaStackItem.upStackItem;
+      havePatternProps = lastPatternPropertiesStackItem && lastPatternPropertiesStackItem.upStackItem === schemaStackItem.upStackItem;
       addProps = [];
       if (haveProps || havePatternProps) {
         for (const name in data) {
@@ -1951,8 +1859,7 @@ const additionalPropertiesDataValid = function (schemasStack, dataStack) {
       }
       addLen = addProps.length;
       if (addLen > 0) {
-        const { schemas } = schemaStackItem,
-              schema = schemas[0];
+        const { schema } = schemaStackItem;
         if (typeof schema === 'boolean') {
           if (!schema) {
             schemaStackItem.errors.push(schemaStackItem);
@@ -1963,7 +1870,7 @@ const additionalPropertiesDataValid = function (schemasStack, dataStack) {
         } else {
           for (let i = addLen - 1; i >= 0; --i) {
             const propName = addProps[i];
-            schemaProperties({ schemasStack, dataStack, schemasFrom: schemaStackItem.schemas, upStackItem: schemaStackItem, data: data[propName], dataFrom: data, dataName: propName });
+            schemaProperties({ schemasStack, dataStack, schemaFrom: schemaStackItem.schema, upStackItem: schemaStackItem, data: data[propName], dataFrom: data, dataName: propName });
           }
           schemaStackItem.state++;
         }
@@ -1988,21 +1895,20 @@ const patternPropertiesDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { state, schemas } = schemaStackItem;
+        { state, schema } = schemaStackItem;
   let doIt;
   switch (state) {
     case 0:
       doIt = false;
       doPatternProps = {};
       if (data && typeof data === 'object' && !Array.isArray(data)) {
-        const schema = schemas[0];
         if (schema && typeof schema === 'object' && !Array.isArray(schema)) {
           for (const propName in schema) {
             if (schema.hasOwnProperty(propName)) {
               const reg = new RegExp(propName);
               for (const dataName in data) {
                 if (data.hasOwnProperty(dataName) && reg.test(dataName)) {
-                  if (schemaProperties({ schemasStack, dataStack, schemasFrom: schema[propName], upStackItem: schemaStackItem, data: data[dataName], dataFrom: data, dataName })) {
+                  if (schemaProperties({ schemasStack, dataStack, schemaFrom: schema[propName], upStackItem: schemaStackItem, data: data[dataName], dataFrom: data, dataName })) {
                     doIt = true;
                     doPatternProps[dataName] = true;
                   }
@@ -2025,7 +1931,7 @@ const patternPropertiesDataValid = function (schemasStack, dataStack) {
       break;
   }
 };
-const patternPropertiesValid = function (schemasStack, val /*, i*/) {
+const patternPropertiesValid = function (val) {
   for (const name in val) {
     if (val.hasOwnProperty(name)) {
       try {
@@ -2049,18 +1955,17 @@ const propertiesDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { state, schemas } = schemaStackItem;
+        { state, schema } = schemaStackItem;
   let doIt;
   switch (state) {
     case 0:
       doIt = false;
       doProps = {};
       if (data && typeof data === 'object' && !Array.isArray(data)) {
-        const schema = schemas[0];
         if (schema && typeof schema === 'object' && !Array.isArray(schema)) {
           for (const propName in schema) {
             if (schema.hasOwnProperty(propName) && data.hasOwnProperty(propName)) {
-              if (schemaProperties({ schemasStack, dataStack, schemasFrom: schema[propName], upStackItem: schemaStackItem, data: data[propName], dataFrom: data, dataName: propName })) {
+              if (schemaProperties({ schemasStack, dataStack, schemaFrom: schema[propName], upStackItem: schemaStackItem, data: data[propName], dataFrom: data, dataName: propName })) {
                 doIt = true;
                 doProps[propName] = true;
               }
@@ -2081,7 +1986,7 @@ const propertiesDataValid = function (schemasStack, dataStack) {
       break;
   }
 };
-const properties = [{ name: 'additionalProperties', schema: { only: true, valid: { types: ['boolean', 'object'] } }, data: { valid: additionalPropertiesDataValid } }, { name: 'patternProperties', schema: { only: true, valid: { types: ['object'], value: patternPropertiesValid } }, data: { valid: patternPropertiesDataValid } }, { name: 'properties', schema: { only: true, valid: { types: ['object'] } }, data: { valid: propertiesDataValid } }];
+const properties = [{ name: 'additionalProperties', schema: { valid: { types: ['boolean', 'object'] } }, data: { valid: additionalPropertiesDataValid } }, { name: 'patternProperties', schema: { valid: { types: ['object'], value: patternPropertiesValid } }, data: { valid: patternPropertiesDataValid } }, { name: 'properties', schema: { valid: { types: ['object'] } }, data: { valid: propertiesDataValid } }];
 module.exports = properties;
 
 /***/ }),
@@ -2106,17 +2011,16 @@ const dataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { state, schemas } = schemaStackItem;
+        { state, schema } = schemaStackItem;
   let doIt;
   switch (state) {
     case 0:
       doIt = false;
       if (data && typeof data === 'object' && !Array.isArray(data)) {
-        const schema = schemas[0];
         if (schema && typeof schema === 'object' && !Array.isArray(schema)) {
           for (const dataName in data) {
             if (data.hasOwnProperty(dataName)) {
-              if (schemaProperties({ schemasStack, dataStack, schemasFrom: schema, upStackItem: schemaStackItem, data: dataName, dataFrom: data })) {
+              if (schemaProperties({ schemasStack, dataStack, schemaFrom: schema, upStackItem: schemaStackItem, data: dataName, dataFrom: data })) {
                 doIt = true;
               }
             }
@@ -2134,7 +2038,7 @@ const dataValid = function (schemasStack, dataStack) {
       break;
   }
 };
-const propertyNames = [{ name: 'propertyNames', schema: { only: true, valid: { types: ['object'] } }, data: { valid: dataValid } }];
+const propertyNames = [{ name: 'propertyNames', schema: { valid: { types: ['object'] } }, data: { valid: dataValid } }];
 module.exports = propertyNames;
 
 /***/ }),
@@ -2158,10 +2062,10 @@ const dataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
+        { schema } = schemaStackItem;
   if (data && typeof data === 'object' && !Array.isArray(data)) {
-    for (const schema of schemas) {
-      if (!data.hasOwnProperty(schema)) {
+    for (const val of schema) {
+      if (!data.hasOwnProperty(val)) {
         schemaStackItem.errors.push(schemaStackItem);
         break;
       }
@@ -2169,7 +2073,7 @@ const dataValid = function (schemasStack, dataStack) {
   }
   schemaStackItem.state = -1;
 };
-const required = [{ name: 'required', schema: { valid: { types: ['string'] } }, data: { valid: dataValid } }];
+const required = [{ name: 'required', schema: { array: true, valid: { types: ['string'] } }, data: { valid: dataValid } }];
 module.exports = required;
 
 /***/ }),
@@ -2193,9 +2097,9 @@ const maxLengthDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
+        { schema } = schemaStackItem;
   if (typeof data === 'string') {
-    if (data.length > schemas[0]) {
+    if (data.length > schema) {
       schemaStackItem.errors.push(schemaStackItem);
     }
   }
@@ -2213,18 +2117,18 @@ const minLengthDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
+        { schema } = schemaStackItem;
   if (typeof data === 'string') {
-    if (data.length < schemas[0]) {
+    if (data.length < schema) {
       schemaStackItem.errors.push(schemaStackItem);
     }
   }
   schemaStackItem.state = -1;
 };
-const valid = function (schemasStack, val /*, i*/) {
+const valid = function (val) {
   return val >= 0 && val % 1 === 0;
 };
-const strLength = [{ name: 'maxLength', schema: { only: true, valid: { types: ['number'], value: valid } }, data: { valid: maxLengthDataValid } }, { name: 'minLength', schema: { only: true, valid: { types: ['number'], value: valid } }, data: { valid: minLengthDataValid } }];
+const strLength = [{ name: 'maxLength', schema: { valid: { types: ['number'], value: valid } }, data: { valid: maxLengthDataValid } }, { name: 'minLength', schema: { valid: { types: ['number'], value: valid } }, data: { valid: minLengthDataValid } }];
 module.exports = strLength;
 
 /***/ }),
@@ -2265,11 +2169,11 @@ const dataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
+        { schema } = schemaStackItem;
   // type: ['string', 'number']
   let valid = false;
-  for (const schema of schemas) {
-    const type = types[schema];
+  for (const val of schema) {
+    const type = types[val];
     if (type) {
       if (typeof type === 'string') {
         valid = typeof data === type;
@@ -2284,7 +2188,7 @@ const dataValid = function (schemasStack, dataStack) {
   }
   schemaStackItem.state = -1;
 };
-const type = [{ name: 'type', schema: { valid: { types: ['string'] } }, data: { valid: dataValid }, ext: { types } }];
+const type = [{ name: 'type', schema: { array: true, valid: { types: ['string'] } }, data: { valid: dataValid }, ext: { types } }];
 module.exports = type;
 
 /***/ }),
@@ -2310,15 +2214,15 @@ const uniqueItemsDataValid = function (schemasStack, dataStack) {
   const schemaStackItem = schemasStack[schemasStack.length - 1],
         dataStackItem = dataStack[schemaStackItem.dataIndex];
   const { data } = dataStackItem,
-        { schemas } = schemaStackItem;
-  if (Array.isArray(data) && schemas[0]) {
+        { schema } = schemaStackItem;
+  if (Array.isArray(data) && schema) {
     if (!uniqueItem(data)) {
       schemaStackItem.errors.push(schemaStackItem);
     }
   }
   schemaStackItem.state = -1;
 };
-const strLength = [{ name: 'uniqueItems', schema: { only: true, valid: { types: ['boolean'] } }, data: { valid: uniqueItemsDataValid } }];
+const strLength = [{ name: 'uniqueItems', schema: { valid: { types: ['boolean'] } }, data: { valid: uniqueItemsDataValid } }];
 module.exports = strLength;
 
 /***/ }),
