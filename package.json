@@ -1,6 +1,6 @@
 {
   "name": "neb-validator",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "json schema validator",
   "main": "build/dev/nebjs-validator.js",
   "scripts": {
