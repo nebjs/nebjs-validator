@@ -184,6 +184,22 @@ const schemaProperties = function (props) {
     const isArr = Array.isArray(schemaFrom) && schemaFrom.length > 0,
           isObj = schemaFrom.constructor === Object;
     if (isArr || isObj) {
+      let dataIndex, keyPath, thisData;
+      if (data !== undefined) {
+        dataIndex = dataStack.length;
+        keyPath = upKeyPath + (dataName !== undefined ? '/' + dataName : '');
+        let dataPath;
+        if (upStackItem) {
+          const dataStackItem = dataStack[upStackItem.dataIndex];
+          dataPath = dataStackItem.dataPath + '/' + dataStackItem.dataName;
+        } else {
+          dataPath = '';
+        }
+        thisData = { dataName: dataName !== undefined ? dataName : '', data, dataFrom, dataPath };
+      } else {
+        keyPath = upKeyPath;
+        dataIndex = upStackItem ? upStackItem.dataIndex : dataStack.length - 1;
+      }
       const schemaLen = schemasStack.length;
       if (isObj) schemaFrom = [schemaFrom];
       const schLen = schemaFrom.length;
@@ -196,9 +212,7 @@ const schemaProperties = function (props) {
             if (rawSchema !== undefined) {
               const { array } = keys.regKeywords[keyword].option.schema;
               const schema = array && !Array.isArray(rawSchema) ? [rawSchema] : rawSchema;
-              const keyPath = data !== undefined ? upKeyPath + (dataName !== undefined ? '/' + dataName : '') : upKeyPath;
-              const dataIndex = data !== undefined ? dataStack.length : upStackItem ? upStackItem.dataIndex : dataStack.length - 1;
-              const stkItem = { keyword, schema, rawSchema, schFrom, keyPath, upStackItem, childStackItems: [], errors: [], state: 0, dataNum: 0, dataIndex };
+              const stkItem = { keyword, schema, rawSchema, schFrom, keyPath, upStackItem, childStackItems: [], errors: [], state: 0, data: thisData, dataNum: 0, dataIndex };
               if (isArr) stkItem.schemaFromIndex = i;
               if (upStackItem) upStackItem.childStackItems.push(stkItem);
               schemasStack.push(stkItem);
@@ -208,14 +222,7 @@ const schemaProperties = function (props) {
       }
       if (schemasStack.length > schemaLen) {
         if (data !== undefined) {
-          let dataPath;
-          if (upStackItem) {
-            const dataStackItem = dataStack[upStackItem.dataIndex];
-            dataPath = dataStackItem.dataPath + '/' + dataStackItem.dataName;
-          } else {
-            dataPath = '';
-          }
-          dataStack.push({ dataName: dataName !== undefined ? dataName : '', data, dataFrom, dataPath });
+          dataStack.push(thisData);
           if (upStackItem) upStackItem.dataNum++;
         }
         doIt = true;
@@ -320,20 +327,20 @@ const validate = function (data) {
       } else pop = true;
     } else pop = true;
     if (pop) {
-      const { upStackItem, errors: itemErrors, dataNum: itemDataNum } = schemaStackItem;
+      const { upStackItem, errors: itemErrors, dataNum } = schemaStackItem;
       if (state === -1 && itemErrors.length > 0) {
         const to = upStackItem ? upStackItem.errors : errors;
         for (const err of itemErrors) {
           to.push(err);
         }
       }
-      if (itemDataNum > 0) dataStack.splice(dataStack.length - itemDataNum, itemDataNum);
+      if (dataNum > 0) dataStack.splice(dataStack.length - dataNum, dataNum);
       schemasStack.pop();
     }
   }
   this.errors = arrCopy([], errors, {
     multi: true, filter: function (array, elements, element /*, index*/) {
-      return { value: objPick({}, element, { pick: ['keyword', 'keyPath'] }) };
+      return { value: objPick({}, element, { pick: ['data', 'keyword', 'keyPath', 'schema', 'rawSchema'] }) };
     }
   });
   return errors.length === 0;
@@ -1266,13 +1273,13 @@ const minimum = __webpack_require__(/*! ./minimum */ "./lib/keywords/minimum.js"
 const maximum = __webpack_require__(/*! ./maximum */ "./lib/keywords/maximum.js");
 const strLength = __webpack_require__(/*! ./strLength */ "./lib/keywords/strLength.js");
 const pattern = __webpack_require__(/*! ./pattern */ "./lib/keywords/pattern.js");
+const formats = __webpack_require__(/*! ./format */ "./lib/keywords/format.js");
 const items = __webpack_require__(/*! ./items */ "./lib/keywords/items.js");
 const arrItems = __webpack_require__(/*! ./arrItems */ "./lib/keywords/arrItems.js");
 const uniqueItems = __webpack_require__(/*! ./uniqueItems */ "./lib/keywords/uniqueItems.js");
 const contains = __webpack_require__(/*! ./contains */ "./lib/keywords/contains.js");
 const required = __webpack_require__(/*! ./required */ "./lib/keywords/required.js");
 const patternRequired = __webpack_require__(/*! ./patternRequired */ "./lib/keywords/patternRequired.js");
-const formats = __webpack_require__(/*! ./format */ "./lib/keywords/format.js");
 const objProps = __webpack_require__(/*! ./objProps */ "./lib/keywords/objProps.js");
 const properties = __webpack_require__(/*! ./properties */ "./lib/keywords/properties.js");
 const dependencies = __webpack_require__(/*! ./dependencies */ "./lib/keywords/dependencies.js");
@@ -1282,7 +1289,7 @@ const oneOf = __webpack_require__(/*! ./oneOf */ "./lib/keywords/oneOf.js");
 const anyOf = __webpack_require__(/*! ./anyOf */ "./lib/keywords/anyOf.js");
 const allOf = __webpack_require__(/*! ./allOf */ "./lib/keywords/allOf.js");
 const not = __webpack_require__(/*! ./not */ "./lib/keywords/not.js");
-const keys = [...types, ...enums, ...consts, ...multipleOf, ...minimum, ...maximum, ...strLength, ...pattern, ...items, ...arrItems, ...uniqueItems, ...contains, ...objProps, ...required, ...patternRequired, ...formats, ...properties, ...dependencies, ...propertyNames, ...ifs, ...oneOf, ...anyOf, ...allOf, ...not];
+const keys = [...types, ...enums, ...consts, ...multipleOf, ...minimum, ...maximum, ...strLength, ...pattern, ...formats, ...items, ...arrItems, ...uniqueItems, ...contains, ...objProps, ...required, ...patternRequired, ...properties, ...dependencies, ...propertyNames, ...ifs, ...oneOf, ...anyOf, ...allOf, ...not];
 module.exports = keys;
 
 /***/ }),
