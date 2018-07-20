@@ -50,5 +50,13 @@ console.log(valid);
 if (!valid) console.log(validator.errors);
 ```
 
+## Keywords Introduction
+### JSON Schema validation keywords
+
+In a simple way, JSON Schema is an object with validation keywords.
+
+The keywords and their values define what rules the data should satisfy to be valid.
+[Keywords](/doc/keywords/index.md)
+
 ## Contents && Document
 
