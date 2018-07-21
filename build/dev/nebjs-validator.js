@@ -96,16 +96,17 @@ return /******/ (function(modules) { // webpackBootstrap
 /************************************************************************/
 /******/ ({
 
-/***/ "./lib/Schema.js":
-/*!***********************!*\
-  !*** ./lib/Schema.js ***!
-  \***********************/
+/***/ "./lib/base/Schema.js":
+/*!****************************!*\
+  !*** ./lib/base/Schema.js ***!
+  \****************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
-const { validate } = __webpack_require__(/*! ./common */ "./lib/common.js");
-const keys = __webpack_require__(/*! ./keys */ "./lib/keys.js");
-const keywords = __webpack_require__(/*! ./keywords/index */ "./lib/keywords/index.js");
+const { validate } = __webpack_require__(/*! ./common */ "./lib/base/common.js");
+const keys = __webpack_require__(/*! ./keys */ "./lib/base/keys.js");
+const keywords = __webpack_require__(/*! ../keywords/index */ "./lib/keywords/index.js");
+const { writeOutErrors } = __webpack_require__(/*! ../error/index */ "./lib/error/index.js");
 
 /**
  * 验证器类
@@ -119,7 +120,7 @@ class Schema {
   constructor(schemas, options) {
     this.schemas = schemas;
     this.data = null;
-    this.errors = [];
+    this.errorItems = [];
     this.options = Object.assign({}, options);
   }
 
@@ -131,6 +132,14 @@ class Schema {
    */
   validate(data) {
     return validate.call(this, data);
+  }
+
+  /**
+   * 输出错误
+   * @param option 输出配置
+   */
+  writeOutErrors(option) {
+    return writeOutErrors.call(this, option);
   }
 }
 
@@ -146,61 +155,58 @@ module.exports = Schema;
 
 /***/ }),
 
-/***/ "./lib/common.js":
-/*!***********************!*\
-  !*** ./lib/common.js ***!
-  \***********************/
+/***/ "./lib/base/common.js":
+/*!****************************!*\
+  !*** ./lib/base/common.js ***!
+  \****************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
-const keys = __webpack_require__(/*! ./keys */ "./lib/keys.js");
+const keys = __webpack_require__(/*! ./keys */ "./lib/base/keys.js");
 const nebUtil = __webpack_require__(/*! nebjs-util */ "./node_modules/nebjs-util/build/dev/nebjs-util.js");
 const objPick = nebUtil.object.pick;
+// const objCopy = nebUtil.object.copy;
 const arrCopy = nebUtil.array.copy;
 
 /**
  * 遍历属性中的所有KEY并转入栈中，待进一步处理..
  * @param props {Object}
  * {
- *  schemasStack: {}, 模型栈
- *  dataStack: {}, 数据栈
- *  upStackItem: {}, 指向上级有关栈元素
+ *  stack: {}, 栈
+ *  parent: {}, 指向上级有关栈元素
  *  schemaFrom: {}, 模型
- *  errors: [], 错误
+ *  errorItems: [], 错误
  *  data: {}, 数据
  *  dataFrom: {}, 数据来源
  *  dataName: '', 数据来源属性名称
  * }
  *
- // 模型栈结构: keyword, schema, schemaFrom, keyPath, upStackItem, childStackItems, errors, state, dataNum, dataIndex
+ // 栈结构: keyword, schema, schemaFrom, schemaPath, parent, children, errorItems, state, dataIndex
  // 数据栈结构: dataName, data, dataFrom, dataPath
  */
 const schemaProperties = function (props) {
-  const { schemasStack, upStackItem = null, dataStack, dataFrom = null, dataName, data } = props,
-        upKeyPath = upStackItem ? upStackItem.keyPath + '/' + upStackItem.keyword : '';
-  let { schemaFrom } = props;
+  const { stack, parent = null, dataFrom = null, dataName = '' } = props,
+        upSchemaPath = parent ? parent.schemaPath + '/' + parent.keyword : '';
+  let { schemaFrom, data } = props;
   let doIt = false;
   if (schemaFrom) {
     const isArr = Array.isArray(schemaFrom) && schemaFrom.length > 0,
           isObj = schemaFrom.constructor === Object;
     if (isArr || isObj) {
-      let dataIndex, keyPath, thisData;
+      let schemaPath, dataPath;
       if (data !== undefined) {
-        dataIndex = dataStack.length;
-        keyPath = upKeyPath + (dataName !== undefined ? '/' + dataName : '');
-        let dataPath;
-        if (upStackItem) {
-          const dataStackItem = dataStack[upStackItem.dataIndex];
-          dataPath = dataStackItem.dataPath + '/' + dataStackItem.dataName;
+        schemaPath = upSchemaPath + (dataName ? '/' + dataName : '');
+        if (parent) {
+          dataPath = parent.dataPath + '/' + parent.dataName;
         } else {
           dataPath = '';
         }
-        thisData = { dataName: dataName !== undefined ? dataName : '', data, dataFrom, dataPath };
       } else {
-        keyPath = upKeyPath;
-        dataIndex = upStackItem ? upStackItem.dataIndex : dataStack.length - 1;
+        schemaPath = upSchemaPath;
+        dataPath = parent.dataPath;
+        data = parent.data;
       }
-      const schemaLen = schemasStack.length;
+      const schemaLen = stack.length;
       if (isObj) schemaFrom = [schemaFrom];
       const schLen = schemaFrom.length;
       for (let i = 0; i < schLen; ++i) {
@@ -212,25 +218,25 @@ const schemaProperties = function (props) {
             if (rawSchema !== undefined) {
               const { array } = keys.regKeywords[keyword].option.schema;
               const schema = array && !Array.isArray(rawSchema) ? [rawSchema] : rawSchema;
-              const stkItem = { keyword, schema, rawSchema, schFrom, keyPath, upStackItem, childStackItems: [], errors: [], state: 0, data: thisData, dataNum: 0, dataIndex };
+              const stkItem = {
+                keyword, schema, rawSchema, schemaFrom: schFrom, schemaPath, parent, children: [], errorItems: [], state: 0,
+                data, dataFrom, dataName, dataPath
+              };
               if (isArr) stkItem.schemaFromIndex = i;
-              if (upStackItem) upStackItem.childStackItems.push(stkItem);
-              schemasStack.push(stkItem);
+              if (parent) parent.children.push(stkItem);
+              stack.push(stkItem);
             }
           }
         }
       }
-      if (schemasStack.length > schemaLen) {
-        if (data !== undefined) {
-          dataStack.push(thisData);
-          if (upStackItem) upStackItem.dataNum++;
-        }
+      if (stack.length > schemaLen) {
         doIt = true;
       }
     }
   }
   return doIt;
 };
+const Z_ANCHOR = /[^\\]\\Z/;
 /**
  * 用于类型判断的缓存
  * @type {*}
@@ -242,6 +248,19 @@ const validTypesCache = {
   boolean: 'boolean',
   object: function (data) {
     return data && typeof data === 'object' && !Array.isArray(data);
+  },
+  regexp: function (data) {
+    if (typeof data === 'string') {
+      if (Z_ANCHOR.test(data)) return false;
+      try {
+        new RegExp(data);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    } else {
+      return data.constructor === RegExp;
+    }
   },
   array: function (data) {
     return data && Array.isArray(data);
@@ -275,10 +294,10 @@ const validTypes = function (types, data) {
 };
 /**
  * 验证模型
- * @param schemaStackItem {Object}, 要验证的模型栈片，不传时默认为模型栈的栈顶
+ * @param stackItem {Object}, 要验证的栈片，不传时默认为栈的栈顶
  */
-const validateSchema = function (schemaStackItem) {
-  const { keyword, schema, keyPath } = schemaStackItem,
+const validateSchema = function (stackItem) {
+  const { keyword, schema, schemaPath } = stackItem,
         { schema: optSchema } = keys.regKeywords[keyword].option,
         { valid } = optSchema;
   if (valid) {
@@ -292,12 +311,11 @@ const validateSchema = function (schemaStackItem) {
           isValid = validTypes(types, schema[i]);
         }
       } else isValid = validTypes(types, schema);
-      if (!isValid) throw new TypeError('scheme error, keyword\'s values invalid at "' + keyPath + keyword + '" by types');
+      if (!isValid) throw new TypeError('scheme error, keyword\'s values invalid at "' + schemaPath + keyword + '" by types');
     }
-    if (value && !value.call(this, schema)) throw new TypeError('scheme error, keyword\'s value invalid at "' + keyPath + '/' + keyword + '" by value');
+    if (value && !value(schema)) throw new TypeError('scheme error, keyword\'s value invalid at "' + schemaPath + '/' + keyword + '" by value');
   }
 };
-
 /**
  * 验证数据对象
  * @param data {Object|Array}
@@ -306,41 +324,45 @@ const validateSchema = function (schemaStackItem) {
 const validate = function (data) {
   this.data = data;
   const errors = [],
-        schemasStack = [],
-        dataStack = [],
+        stack = [],
         schemas = this.schemas;
-  schemaProperties({ schemasStack, dataStack, schemaFrom: schemas, data, dataFrom: null });
-  while (schemasStack.length > 0) {
-    const schemaStackItem = schemasStack[schemasStack.length - 1],
-          { keyword } = schemaStackItem,
+  schemaProperties({ stack, schemaFrom: schemas, data, dataFrom: null });
+  while (stack.length > 0) {
+    const stackItem = stack[stack.length - 1],
+          { keyword } = stackItem,
           option = keys.regKeywords[keyword].option;
-    let { state } = schemaStackItem,
+    let { state } = stackItem,
         pop = false;
     if (!(state < 0)) {
       const { data } = option,
             { valid: dataValid } = data;
-      if (state === 0) validateSchema(schemaStackItem);
+      if (state === 0) validateSchema(stackItem);
       if (dataValid) {
-        dataValid.call(this, schemasStack, dataStack);
-        state = schemaStackItem.state;
+        dataValid(stack);
+        state = stackItem.state;
         if (state < 0) pop = true;
       } else pop = true;
     } else pop = true;
     if (pop) {
-      const { upStackItem, errors: itemErrors, dataNum } = schemaStackItem;
-      if (state === -1 && itemErrors.length > 0) {
-        const to = upStackItem ? upStackItem.errors : errors;
-        for (const err of itemErrors) {
-          to.push(err);
+      const { parent, errorItems } = stackItem;
+      if (state === -1 && errorItems.length > 0) {
+        const to = parent ? parent.errorItems : errors;
+        for (const errorItem of errorItems) {
+          to.push(errorItem);
         }
       }
-      if (dataNum > 0) dataStack.splice(dataStack.length - dataNum, dataNum);
-      schemasStack.pop();
+      stack.pop();
     }
   }
   this.errors = arrCopy([], errors, {
-    multi: true, filter: function (array, elements, element /*, index*/) {
-      return { value: objPick({}, element, { pick: ['data', 'keyword', 'keyPath', 'schema', 'rawSchema'] }) };
+    multi: true, filter: function (array, stackItems, stackItem /*, index*/) {
+      const obj = {};
+      const { keyword } = stackItem,
+            option = keys.regKeywords[keyword].option,
+            { data } = option,
+            { error } = data;
+      if (error) error(stackItem);
+      return { value: objPick(obj, stackItem, { pick: ['data', 'message', 'keyword', 'schemaPath', 'schema', 'rawSchema'] }) };
     }
   });
   return errors.length === 0;
@@ -349,23 +371,10 @@ module.exports = { validate, schemaProperties };
 
 /***/ }),
 
-/***/ "./lib/index.js":
-/*!**********************!*\
-  !*** ./lib/index.js ***!
-  \**********************/
-/*! no static exports found */
-/***/ (function(module, exports, __webpack_require__) {
-
-const Schema = __webpack_require__(/*! ./Schema */ "./lib/Schema.js");
-const schema = { Schema };
-module.exports = schema;
-
-/***/ }),
-
-/***/ "./lib/keys.js":
-/*!*********************!*\
-  !*** ./lib/keys.js ***!
-  \*********************/
+/***/ "./lib/base/keys.js":
+/*!**************************!*\
+  !*** ./lib/base/keys.js ***!
+  \**************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -395,11 +404,12 @@ const regKeywords = {};
  *    array: false, 为数组，当不是数组时，自动转换
  *    valid: {// 用于模型验证,
  *      types: ['', ..], 注册关键字支持的类型
- *      value: function(val){}, 关键字值验证器，this指向当前validator实例
+ *      value: function(val){}, 关键字值验证器
  *    }
  *  },
  *  data: {
- *    valid: function(schemasStack, dataStack){}, 关键字验证器，this指向当前validator实例
+ *    valid: function(stack){}, 关键字验证器
+ *    error: function(stack){}, 关键字错误处理器
  *  },
  *  ext: {}, 用户扩展信息
  * },..]
@@ -410,7 +420,7 @@ const registerKeywords = function (keywords) {
   let num = 0;
   for (const keyword of keywords) {
     if (!(keyword && keyword.constructor === Object)) throw new TypeError('keyword must be a object');
-    const regKey = objCopy({ schema: { array: false, valid: { types: [], value: null } }, data: { valid: null }, ext: {} }, keyword, { deep: true });
+    const regKey = objCopy({ schema: { array: false, valid: { types: [], value: null } }, data: { valid: null, error: null }, ext: {} }, keyword, { deep: true });
     let { name, schema, data, ext } = regKey;
     if (!(name && typeof name === 'string' && (name = trimString(name)).length > 0)) throw new TypeError('keyword\'s name must be a non-empty string');
     regKey.name = name;
@@ -418,7 +428,7 @@ const registerKeywords = function (keywords) {
     if (mapVal) throw new TypeError('keyword ' + name + ' have already registered');
     if (schema.constructor !== Object) throw new TypeError('keyword ' + name + ' \'s schema must be a object');
     if (data.constructor !== Object) throw new TypeError('keyword ' + name + ' \'s data must be a object');
-    const { array, valid: valid } = schema;
+    const { array, valid } = schema;
     if (array !== true && array !== false) throw new TypeError('keyword ' + name + ' \'s schema.array must be a boolean');
     if (valid) {
       if (valid.constructor !== Object) throw new TypeError('keyword ' + name + '\'s schema.valid must be a object');
@@ -426,8 +436,9 @@ const registerKeywords = function (keywords) {
       if (!(types && Array.isArray(types))) throw new TypeError('keyword ' + name + '\'s schema.valid.types must be a array');
       if (value && typeof value !== 'function') throw new TypeError('keyword ' + name + '\'s schema.valid.value must be a function');
     }
-    const { valid: dataValid } = data;
-    if (dataValid && typeof dataValid !== 'function') throw new TypeError('keyword ' + name + '\'s dataValid must be a function');
+    const { valid: dataValid, error: dataError } = data;
+    if (dataValid && typeof dataValid !== 'function') throw new TypeError('keyword ' + name + '\'s data.valid must be a function');
+    if (dataError && typeof dataError !== 'function') throw new TypeError('keyword ' + name + '\'s data.error must be a function');
     if (!(ext && ext.constructor === Object)) throw new TypeError('keyword ' + name + '\'s ext must be a object');
     mapVal = regKeywords[name] = { option: regKey };
     mapVal.index = regKeys.length;
@@ -450,6 +461,49 @@ module.exports = { registerKeywords, getRegisterKeywordsInfo, regKeys, regKeywor
 
 /***/ }),
 
+/***/ "./lib/error/index.js":
+/*!****************************!*\
+  !*** ./lib/error/index.js ***!
+  \****************************/
+/*! no static exports found */
+/***/ (function(module, exports) {
+
+// const nebUtil = require('nebjs-util');
+// const objPick = nebUtil.object.pick;
+// const objCopy = nebUtil.object.copy;
+// const arrCopy = nebUtil.array.copy;
+/**
+ * 输出错误
+ * @param option 输出配置
+ */
+const writeOutErrors = function (option = {}) {
+  const validator = this,
+        { errors } = validator;
+  const { simple = true } = option;
+  let out;
+  if (simple) {
+    out = errors;
+  }
+  // 开始处理错误...
+  return out;
+};
+module.exports = { writeOutErrors };
+
+/***/ }),
+
+/***/ "./lib/index.js":
+/*!**********************!*\
+  !*** ./lib/index.js ***!
+  \**********************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+const Schema = __webpack_require__(/*! ./base/Schema */ "./lib/base/Schema.js");
+const schema = { Schema };
+module.exports = schema;
+
+/***/ }),
+
 /***/ "./lib/keywords/allOf.js":
 /*!*******************************!*\
   !*** ./lib/keywords/allOf.js ***!
@@ -457,82 +511,81 @@ module.exports = { registerKeywords, getRegisterKeywordsInfo, regKeys, regKeywor
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
-const { schemaProperties } = __webpack_require__(/*! ../common */ "./lib/common.js");
+const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/base/common.js");
 /**
  * allOf关键字处理程序：data对象的多个组合验证结果全部成功，则成功（所有组合都会执行）...
  * 举例：allOf: [{"maximum": 3}, {"type": "integer"}]
  * 符合：data: [2, 3]
  * 不符合：data: [1.5, 2.5, 4, 4.5, 5, 5.5, any non-number]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const dataValid = function (schemasStack, dataStack) {
+const dataValid = function (stack) {
   // 方案一：全部检测完再判断
-  const schemaStackItem = schemasStack[schemasStack.length - 1] /*, dataStackItem = dataStack[schemaStackItem.dataIndex]*/;
-  const { state, runSchemaIndex, schema } = schemaStackItem;
+  const stackItem = stack[stack.length - 1],
+        { state, runSchemaIndex, schema } = stackItem;
   switch (state) {
     case 0:
       if (schema.length === 0) {
-        schemaStackItem.state = -1;
+        stackItem.state = -1;
       } else {
-        schemaStackItem.runSchemaIndex = 0;
-        schemaStackItem.runSchemaErrors = [];
-        schemaStackItem.state++;
+        stackItem.runSchemaIndex = 0;
+        stackItem.runSchemaErrors = [];
+        stackItem.state++;
       }
       break;
     case 1:
-      schemaProperties({ schemasStack, dataStack, schemaFrom: schema[runSchemaIndex], upStackItem: schemaStackItem });
-      schemaStackItem.runSchemaIndex++;
-      schemaStackItem.state++;
+      schemaProperties({ stack, schemaFrom: schema[runSchemaIndex], parent: stackItem });
+      stackItem.runSchemaIndex++;
+      stackItem.state++;
       break;
     case 2:
-      schemaStackItem.runSchemaErrors.push(schemaStackItem.errors);
-      schemaStackItem.errors = [];
+      stackItem.runSchemaErrors.push(stackItem.errorItems);
+      stackItem.errorItems = [];
       if (runSchemaIndex < schema.length) {
-        schemaStackItem.state--;
+        stackItem.state--;
       } else {
         let haveErr = false;
-        const schemaErrors = schemaStackItem.runSchemaErrors;
-        for (const errors of schemaErrors) {
-          if (errors.length > 0) {
+        const schemaErrors = stackItem.runSchemaErrors;
+        for (const errorItems of schemaErrors) {
+          if (errorItems.length > 0) {
             haveErr = true;
             break;
           }
         }
         if (haveErr) {
-          schemaStackItem.errors.push(schemaStackItem);
-          schemaStackItem.state = -1;
+          stackItem.errorItems.push(stackItem);
+          stackItem.state = -1;
         } else {
-          schemaStackItem.state = -2; // 置状态小于0，代表已经完成所有的过程，等于-1时处理错误信息，等于-2不处理错误信息
+          stackItem.state = -2; // 置状态小于0，代表已经完成所有的过程，等于-1时处理错误信息，等于-2不处理错误信息
         }
       }
       break;
   }
   // 方案二：检测到错误即结束
-  /*const schemaStackItem = schemasStack[schemasStack.length - 1]/!*, dataStackItem = dataStack[schemaStackItem.dataIndex]*!/;
-  const {state, runSchemaIndex, schema} = schemaStackItem;
+  /*const stackItem = stack[stack.length - 1];
+  const {state, runSchemaIndex, schema} = stackItem;
   switch (state) {
     case 0:
       if (schema.length === 0) {
-        schemaStackItem.state = -1;
+        stackItem.state = -1;
       } else {
-        schemaStackItem.runSchemaIndex = 0;
-        schemaStackItem.state++;
+        stackItem.runSchemaIndex = 0;
+        stackItem.state++;
       }
       break;
     case 1:
-      schemaProperties({schemasStack, dataStack, schemaFrom: schema[runSchemaIndex], upStackItem: schemaStackItem});
-      schemaStackItem.runSchemaIndex++;
-      schemaStackItem.state++;
+      schemaProperties({stack, schemaFrom: schema[runSchemaIndex], parent: stackItem});
+      stackItem.runSchemaIndex++;
+      stackItem.state++;
       break;
     case 2:
-      if (schemaStackItem.errors.length > 0) {
-        schemaStackItem.errors = [Object.assign({}, schemaStackItem)];
-        schemaStackItem.state = -1;
+      if (stackItem.errorItems.length > 0) {
+        stackItem.errorItems = [Object.assign({}, stackItem)];
+        stackItem.state = -1;
       } else if (runSchemaIndex === schema.length) {
-        schemaStackItem.state = -1;
+        stackItem.state = -1;
       } else {
-        schemaStackItem.state--;
+        stackItem.state--;
       }
       break;
   }*/
@@ -549,42 +602,41 @@ module.exports = properties;
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
-const { schemaProperties } = __webpack_require__(/*! ../common */ "./lib/common.js");
+const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/base/common.js");
 /**
  * anyOf关键字处理程序：data对象的多个组合验证结果中有一个成功，则成功（先检测到一个成功，则后续不再执行）...
  * 举例：anyOf: [{"maximum": 3}, {"type": "integer"}]
  * 符合：data: [1.5, 2, 2.5, 3, 4, 5, any non-number]
  * 不符合：data: [4.5, 5.5]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const dataValid = function (schemasStack, dataStack) {
+const dataValid = function (stack) {
   // 检测到任何错误即结束
-  const schemaStackItem = schemasStack[schemasStack.length - 1] /*, dataStackItem = dataStack[schemaStackItem.dataIndex]*/;
-  const { state, runSchemaIndex, schema } = schemaStackItem;
+  const stackItem = stack[stack.length - 1],
+        { state, runSchemaIndex, schema } = stackItem;
   switch (state) {
     case 0:
       if (schema.length === 0) {
-        schemaStackItem.state = -1;
+        stackItem.state = -1;
       } else {
-        schemaStackItem.runSchemaIndex = 0;
-        schemaStackItem.state++;
+        stackItem.runSchemaIndex = 0;
+        stackItem.state++;
       }
       break;
     case 1:
-      schemaProperties({ schemasStack, dataStack, schemaFrom: schema[runSchemaIndex], upStackItem: schemaStackItem });
-      schemaStackItem.runSchemaIndex++;
-      schemaStackItem.state++;
+      schemaProperties({ stack, schemaFrom: schema[runSchemaIndex], parent: stackItem });
+      stackItem.runSchemaIndex++;
+      stackItem.state++;
       break;
     case 2:
-      if (schemaStackItem.errors.length === 0) {
-        schemaStackItem.state = -1;
+      if (stackItem.errorItems.length === 0) {
+        stackItem.state = -1;
       } else if (runSchemaIndex === schema.length) {
-        schemaStackItem.errors = [Object.assign({}, schemaStackItem)];
-        schemaStackItem.state = -1;
+        stackItem.errorItems = [Object.assign({}, stackItem)];
+        stackItem.state = -1;
       } else {
-        schemaStackItem.errors = [];
-        schemaStackItem.state--;
+        stackItem.errorItems = [];
+        stackItem.state--;
       }
       break;
   }
@@ -606,40 +658,30 @@ module.exports = properties;
  * 举例：maxItems: 3
  * 符合：data: [[], [1], [1, 2, 3]]
  * 不符合: data: [[1, 2, 3, 4]]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const maxItemsDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
-  if (Array.isArray(data)) {
-    if (data.length > schema) {
-      schemaStackItem.errors.push(schemaStackItem);
-    }
+const maxItemsDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { schema, data } = stackItem;
+  if (Array.isArray(data) && data.length > schema) {
+    stackItem.errorItems.push(stackItem);
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 /**
  * minItems关键字处理程序：data数组元素个数最大值
  * 举例：minItems: 3
  * 符合：data: [[1, 2, 3, 4], [1, 2, 3]]
  * 不符合: data: [[], [1]]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const minItemsDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
-  if (Array.isArray(data)) {
-    if (data.length < schema) {
-      schemaStackItem.errors.push(schemaStackItem);
-    }
+const minItemsDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { schema, data } = stackItem;
+  if (Array.isArray(data) && data.length < schema) {
+    stackItem.errorItems.push(stackItem);
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 const valid = function (val) {
   return val >= 0 && val % 1 === 0;
@@ -663,18 +705,15 @@ const equal = nebUtil.common.equal;
  * 举例：const: [1, 2, 3]
  * 符合：data: [1, 2, 3]
  * 不符合: [1, 2, 3, 4]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const dataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const dataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { schema, data } = stackItem;
   if (!equal(schema, data)) {
-    schemaStackItem.errors.push(schemaStackItem);
+    stackItem.errorItems.push(stackItem);
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 const consts = [{ name: 'const', schema: {}, data: { valid: dataValid } }];
 module.exports = consts;
@@ -688,95 +727,91 @@ module.exports = consts;
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
-const { schemaProperties } = __webpack_require__(/*! ../common */ "./lib/common.js");
+const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/base/common.js");
 /**
  * contains关键字处理程序：data数组中的任一元素值是否符合规则
  * 举例：contains: { "type": "integer" }
  * 符合：data: [[1], [1, "foo"]]
  * 不符合: [[], ["foo", "bar"]]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const dataValid = function (schemasStack, dataStack) {
+const dataValid = function (stack) {
   // 方案一：全部检测完再判断
-  /*const schemaStackItem = schemasStack[schemasStack.length - 1], dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const {data} = dataStackItem, {state, runDataIndex, schema} = schemaStackItem;
+  /*const stackItem = stack[stack.length - 1], {data, state, runDataIndex, schema} = stackItem;
   switch (state) {
     case 0:
       if (Array.isArray(data)) {
         if (data.length === 0) {
-          schemaStackItem.errors.push(schemaStackItem);
-          schemaStackItem.state = -1;
+          stackItem.errorItems.push(stackItem);
+          stackItem.state = -1;
         } else {
-          schemaStackItem.runDataIndex = 0;
-          schemaStackItem.runSchemaErrors = [];
-          schemaStackItem.state++;
+          stackItem.runDataIndex = 0;
+          stackItem.runSchemaErrors = [];
+          stackItem.state++;
         }
       } else {
-        schemaStackItem.state = -1;
+        stackItem.state = -1;
       }
       break;
     case 1:
-      schemaProperties({schemasStack, dataStack, schemaFrom: schema, upStackItem: schemaStackItem, data: data[runDataIndex], dataFrom: data, dataName: runDataIndex});
-      schemaStackItem.runDataIndex++;
-      schemaStackItem.state++;
+      schemaProperties({stack, schemaFrom: schema, parent: stackItem, data: data[runDataIndex], dataFrom: data, dataName: runDataIndex});
+      stackItem.runDataIndex++;
+      stackItem.state++;
       break;
     case 2:
-      schemaStackItem.runSchemaErrors.push(schemaStackItem.errors);
-      schemaStackItem.errors = [];
+      stackItem.runSchemaErrors.push(stackItem.errorItems);
+      stackItem.errorItems = [];
       if (runDataIndex < data.length) {
-        schemaStackItem.state--;
+        stackItem.state--;
       } else {
         let haveOk = false;
-        const schemaErrors = schemaStackItem.runSchemaErrors;
-        for (const errors of schemaErrors) {
-          if (errors.length === 0) {
+        const schemaErrors = stackItem.runSchemaErrors;
+        for (const errorItems of schemaErrors) {
+          if (errorItems.length === 0) {
             haveOk = true;
             break;
           }
         }
         if (!haveOk) {
-          schemaStackItem.errors.push(schemaStackItem);
-          schemaStackItem.state = -1;
+          stackItem.errorItems.push(stackItem);
+          stackItem.state = -1;
         } else {
-          schemaStackItem.state = -2;// 置状态小于0，代表已经完成所有的过程，等于-1时处理错误信息，等于-2不处理错误信息
+          stackItem.state = -2;// 置状态小于0，代表已经完成所有的过程，等于-1时处理错误信息，等于-2不处理错误信息
         }
       }
       break;
   }*/
   // 检测到任何满足条件即结束
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { state, runDataIndex, schema } = schemaStackItem;
+  const stackItem = stack[stack.length - 1],
+        { data, state, runDataIndex, schema } = stackItem;
   switch (state) {
     case 0:
       if (Array.isArray(data)) {
         if (data.length === 0) {
-          schemaStackItem.errors.push(schemaStackItem);
-          schemaStackItem.state = -1;
+          stackItem.errorItems.push(stackItem);
+          stackItem.state = -1;
         } else {
-          schemaStackItem.runDataIndex = 0;
-          schemaStackItem.state++;
+          stackItem.runDataIndex = 0;
+          stackItem.state++;
         }
       } else {
-        schemaStackItem.state = -1;
+        stackItem.state = -1;
       }
       break;
     case 1:
-      schemaProperties({ schemasStack, dataStack, schemaFrom: schema, upStackItem: schemaStackItem, data: data[runDataIndex], dataFrom: data, dataName: runDataIndex });
-      schemaStackItem.runDataIndex++;
-      schemaStackItem.state++;
+      schemaProperties({ stack, schemaFrom: schema, parent: stackItem, data: data[runDataIndex], dataFrom: data, dataName: runDataIndex });
+      stackItem.runDataIndex++;
+      stackItem.state++;
       break;
     case 2:
-      if (schemaStackItem.errors.length === 0) {
-        schemaStackItem.state = -1;
+      if (stackItem.errorItems.length === 0) {
+        stackItem.state = -1;
       } else if (runDataIndex === data.length) {
-        schemaStackItem.errors = [Object.assign({}, schemaStackItem)];
-        schemaStackItem.state = -1;
+        stackItem.errorItems = [Object.assign({}, stackItem)];
+        stackItem.state = -1;
       } else {
-        schemaStackItem.errors = [];
-        schemaStackItem.state--;
+        stackItem.errorItems = [];
+        stackItem.state--;
       }
       break;
   }
@@ -793,20 +828,17 @@ module.exports = contains;
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
-const { schemaProperties } = __webpack_require__(/*! ../common */ "./lib/common.js");
+const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/base/common.js");
 /**
  * dependencies关键字处理程序：data对象的子属性验证...
  * 举例：{"dependencies":{"foo": ["bar", "baz"]}}
  * 符合：data: [{"foo": 1, "bar": 2, "baz": 3}, {}, {"a": 1}]
  * 不符合: data: [{"foo": 1}, {"foo": 1, "bar": 2}, {"foo": 1, "baz": 3}]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const dataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { state, schema } = schemaStackItem;
+const dataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, state, schema } = stackItem;
   let doIt;
   switch (state) {
     case 0:
@@ -824,22 +856,22 @@ const dataValid = function (schemasStack, dataStack) {
                     break;
                   }
                 }
-                if (hasError) schemaStackItem.errors.push(schemaStackItem);
+                if (hasError) stackItem.errorItems.push(stackItem);
               } else if (typeof schema === 'object') {
-                if (schemaProperties({ schemasStack, dataStack, schemaFrom: propSchema, upStackItem: schemaStackItem })) doIt = true;
+                if (schemaProperties({ stack, schemaFrom: propSchema, parent: stackItem })) doIt = true;
               }
             }
           }
         }
       }
       if (!doIt) {
-        schemaStackItem.state = -1;
+        stackItem.state = -1;
       } else {
-        schemaStackItem.state++;
+        stackItem.state++;
       }
       break;
     case 1:
-      schemaStackItem.state = -1;
+      stackItem.state = -1;
       break;
   }
 };
@@ -862,14 +894,11 @@ const equal = nebUtil.common.equal;
  * 举例：enum: [ 2, "foo", {"foo": "bar" }, [1, 2, 3] ]
  * 符合：data: 2, "foo", {"foo": "bar"}, [1, 2, 3]
  * 不符合: 1, "bar", {"foo": "baz"}, [1, 2, 3, 4], any value not in the array
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const dataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const dataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   let valid = false;
   for (const sch of schema) {
     if (equal(sch, data)) {
@@ -878,9 +907,9 @@ const dataValid = function (schemasStack, dataStack) {
     }
   }
   if (!valid) {
-    schemaStackItem.errors.push(schemaStackItem);
+    stackItem.errorItems.push(stackItem);
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 const enums = [{ name: 'enum', schema: {}, data: { valid: dataValid } }];
 module.exports = enums;
@@ -1005,7 +1034,8 @@ const formats = (() => {
     ipv4, ipv6,
     regex,
     uuid: UUID,
-    'json-pointer': JSON_POINTER, 'json-pointer-uri-fragment': JSON_POINTER_URI_FRAGMENT, 'relative-json-pointer': RELATIVE_JSON_POINTER
+    'json-pointer': JSON_POINTER, 'json-pointer-uri-fragment': JSON_POINTER_URI_FRAGMENT, 'relative-json-pointer': RELATIVE_JSON_POINTER,
+    'phone': /^(13[0-9]|14[579]|15[0-3,5-9]|16[6]|17[0135678]|18[0-9]|19[89])\d{8}$/
   };
 })();
 const formatsNumber = (() => {
@@ -1023,20 +1053,17 @@ let lastFormat, isFormatExclusiveMaximum, lastFormatExclusiveMaximumStackItem, i
  * 举例：formatMinimum: 3
  * 符合：data: [3, 4, 5]
  * 不符合: [1, 2]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const formatMinimumDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const formatMinimumDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   if (typeof data === 'string' && lastFormat) {
     const fnf = formatsNumber[lastFormat];
     if (fnf && typeof fnf === 'function') {
       let ok = false;
-      // schemaFrom, keyPath, upStackItem三者有一个相同都代表来自同一个上级，说明是与当前formatMinimum是兄弟的then
-      if (isFormatExclusiveMinimum && lastFormatExclusiveMinimumStackItem.upStackItem === schemaStackItem.upStackItem) {
+      // schemaFrom, schemaPath, parent三者有一个相同都代表来自同一个上级，说明是与当前formatMinimum是兄弟的then
+      if (isFormatExclusiveMinimum && lastFormatExclusiveMinimumStackItem.parent === stackItem.parent) {
         // 大于模式
         ok = fnf(data) > fnf(schema);
       } else {
@@ -1044,60 +1071,54 @@ const formatMinimumDataValid = function (schemasStack, dataStack) {
         ok = fnf(data) >= fnf(schema);
       }
       if (!ok) {
-        schemaStackItem.errors.push(schemaStackItem);
+        stackItem.errorItems.push(stackItem);
       }
     }
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 /**
  * formatExclusiveMinimum关键字处理程序：data值的是否大于schema
  * 举例：formatExclusiveMinimum: 3
  * 符合：data: [4, 5]
  * 不符合: [1, 2, 3]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const formatExclusiveMinimumDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const formatExclusiveMinimumDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   const tp = typeof schema;
   if (tp === 'string') {
     if (typeof data === 'string' && lastFormat) {
       const fnf = formatsNumber[lastFormat];
       if (fnf && typeof fnf === 'function') {
         if (fnf(data) <= fnf(schema)) {
-          schemaStackItem.errors.push(schemaStackItem);
+          stackItem.errorItems.push(stackItem);
         }
       }
     }
   } else {
     isFormatExclusiveMinimum = schema;
-    lastFormatExclusiveMinimumStackItem = schemaStackItem;
+    lastFormatExclusiveMinimumStackItem = stackItem;
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 /**
  * formatMaximum关键字处理程序：data值的是否小于等于schema（formatExclusiveMaximum时不能等于）
  * 举例：formatMaximum: 3
  * 符合：data: [1, 2, 3]
  * 不符合: [4, 5, 6]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const formatMaximumDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const formatMaximumDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   if (lastFormat && typeof data === 'string') {
     const fnf = formatsNumber[lastFormat];
     if (fnf && typeof fnf === 'function') {
       let ok = false;
-      // schemaFrom, keyPath, upStackItem三者有一个相同都代表来自同一个上级，说明是与当前formatMaximum是兄弟的then
-      if (isFormatExclusiveMaximum && lastFormatExclusiveMaximumStackItem.upStackItem === schemaStackItem.upStackItem) {
+      // schemaFrom, schemaPath, parent三者有一个相同都代表来自同一个上级，说明是与当前formatMaximum是兄弟的then
+      if (isFormatExclusiveMaximum && lastFormatExclusiveMaximumStackItem.parent === stackItem.parent) {
         // 小于模式
         ok = fnf(data) < fnf(schema);
       } else {
@@ -1105,54 +1126,48 @@ const formatMaximumDataValid = function (schemasStack, dataStack) {
         ok = fnf(data) <= fnf(schema);
       }
       if (!ok) {
-        schemaStackItem.errors.push(schemaStackItem);
+        stackItem.errorItems.push(stackItem);
       }
     }
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 /**
  * formatExclusiveMaximum关键字处理程序：data值的是否小于schema
  * 举例：formatExclusiveMaximum: 3
  * 符合：data: [1, 2]
  * 不符合: [3, 4, 5, 6]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const formatExclusiveMaximumDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const formatExclusiveMaximumDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   const tp = typeof schema;
   if (tp === 'number') {
     if (lastFormat && typeof data === 'string') {
       const fnf = formatsNumber[lastFormat];
       if (fnf && typeof fnf === 'function') {
         if (fnf(data) >= fnf(schema)) {
-          schemaStackItem.errors.push(schemaStackItem);
+          stackItem.errorItems.push(stackItem);
         }
       }
     }
   } else {
     isFormatExclusiveMaximum = schema;
-    lastFormatExclusiveMaximumStackItem = schemaStackItem;
+    lastFormatExclusiveMaximumStackItem = stackItem;
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 /**
  * format关键字处理程序：data字符串格式验证...
  * 举例：format: ['phone']
  * 符合：data: 13511111111
  * 不符合: data: 1 123 44456
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const formatDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const formatDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   if (typeof data === 'string') {
     const fmt = formats[schema];
     if (fmt) {
@@ -1163,14 +1178,14 @@ const formatDataValid = function (schemasStack, dataStack) {
         ok = fmt(data);
       }
       if (!ok) {
-        schemaStackItem.errors.push(schemaStackItem);
+        stackItem.errorItems.push(stackItem);
         lastFormat = null;
       } else {
         lastFormat = schema;
       }
     }
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 const properties = [{ name: 'formatMinimum', schema: { only: true, valid: { types: ['string'] } }, data: { valid: formatMinimumDataValid } }, { name: 'formatExclusiveMinimum', schema: { only: true, valid: { types: ['string', 'boolean'] } }, data: { valid: formatExclusiveMinimumDataValid } }, { name: 'formatMaximum', schema: { only: true, valid: { types: ['string'] } }, data: { valid: formatMaximumDataValid } }, { name: 'formatExclusiveMaximum', schema: { only: true, valid: { types: ['string', 'boolean'] } }, data: { valid: formatExclusiveMaximumDataValid } }, { name: 'format', schema: { only: true, valid: { types: ['string'] } }, data: { valid: formatDataValid }, ext: { formats } }];
 module.exports = properties;
@@ -1184,72 +1199,69 @@ module.exports = properties;
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
-let lastIfSchemaStackItem, isErrors;
-const { schemaProperties } = __webpack_require__(/*! ../common */ "./lib/common.js");
+let lastIfstackItem, isErrors;
+const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/base/common.js");
 /**
  * else关键字处理程序：data对象的条件验证...
  * 举例：if: {}, then: {}, else: {}
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const elseDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1];
-  const { state } = schemaStackItem;
+const elseDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { state } = stackItem;
   switch (state) {
     case 0:
-      if (lastIfSchemaStackItem && lastIfSchemaStackItem.upStackItem === schemaStackItem.upStackItem && isErrors) {
-        schemaProperties({ schemasStack, dataStack, schemaFrom: schemaStackItem.schema, upStackItem: schemaStackItem });
-        schemaStackItem.state++;
+      if (lastIfstackItem && lastIfstackItem.parent === stackItem.parent && isErrors) {
+        schemaProperties({ stack, schemaFrom: stackItem.schema, parent: stackItem });
+        stackItem.state++;
       } else {
-        schemaStackItem.state = -1;
+        stackItem.state = -1;
       }
       break;
     case 1:
-      schemaStackItem.state = -1;
+      stackItem.state = -1;
       break;
   }
 };
 /**
  * then关键字处理程序：data对象的条件验证...
  * 举例：if: {}, then: {}, else: {}
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const thenDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1];
-  const { state } = schemaStackItem;
+const thenDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { state } = stackItem;
   switch (state) {
     case 0:
-      if (lastIfSchemaStackItem && lastIfSchemaStackItem.upStackItem === schemaStackItem.upStackItem && !isErrors) {
-        schemaProperties({ schemasStack, dataStack, schemaFrom: schemaStackItem.schema, upStackItem: schemaStackItem });
-        schemaStackItem.state++;
+      if (lastIfstackItem && lastIfstackItem.parent === stackItem.parent && !isErrors) {
+        schemaProperties({ stack, schemaFrom: stackItem.schema, parent: stackItem });
+        stackItem.state++;
       } else {
-        schemaStackItem.state = -1;
+        stackItem.state = -1;
       }
       break;
     case 1:
-      schemaStackItem.state = -1;
+      stackItem.state = -1;
       break;
   }
 };
 /**
  * if关键字处理程序：data对象的条件验证...
  * 举例：if: {}, then: {}, else: {}
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const ifDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1] /*, dataStackItem = dataStack[schemaStackItem.dataIndex]*/;
-  const { state } = schemaStackItem;
+const ifDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { state } = stackItem;
   switch (state) {
     case 0:
-      schemaProperties({ schemasStack, dataStack, schemaFrom: schemaStackItem.schema, upStackItem: schemaStackItem });
-      schemaStackItem.state++;
+      schemaProperties({ stack, schemaFrom: stackItem.schema, parent: stackItem });
+      stackItem.state++;
       break;
     case 1:
-      lastIfSchemaStackItem = schemaStackItem;
-      isErrors = schemaStackItem.errors.length > 0;
-      schemaStackItem.state = -2;
+      lastIfstackItem = stackItem;
+      isErrors = stackItem.errorItems.length > 0;
+      stackItem.state = -2;
       break;
   }
 };
@@ -1302,41 +1314,38 @@ module.exports = keys;
 /***/ (function(module, exports, __webpack_require__) {
 
 let dataLen, additionalLen, sepLen, lastItemsStackItem;
-const { schemaProperties } = __webpack_require__(/*! ../common */ "./lib/common.js");
+const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/base/common.js");
 /**
  * additionalItems关键字处理程序，当为false时，不允许添加额外多余项，当为{}时检测额外项
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const additionalItemsDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { state } = schemaStackItem,
-        { data } = dataStackItem;
+const additionalItemsDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1];
+  const { state } = stackItem;
   switch (state) {
     case 0:
-      if (lastItemsStackItem && lastItemsStackItem.upStackItem === schemaStackItem.upStackItem && additionalLen > 0) {
-        const { schema } = schemaStackItem;
+      if (lastItemsStackItem && lastItemsStackItem.parent === stackItem.parent && additionalLen > 0) {
+        const { data, schema } = stackItem;
         if (typeof schema === 'boolean') {
           if (!schema) {
             // 不允许继续了..
-            schemaStackItem.errors.push(schemaStackItem);
-            schemaStackItem.state = -1;
+            stackItem.errorItems.push(stackItem);
+            stackItem.state = -1;
           } else {
-            schemaStackItem.state = -1;
+            stackItem.state = -1;
           }
         } else {
           for (let i = dataLen - 1; i >= sepLen; --i) {
-            schemaProperties({ schemasStack, dataStack, schemaFrom: schemaStackItem.schema, upStackItem: schemaStackItem, data: data[i], dataFrom: data, dataName: i });
+            schemaProperties({ stack, schemaFrom: stackItem.schema, parent: stackItem, data: data[i], dataFrom: data, dataName: i });
           }
-          schemaStackItem.state++;
+          stackItem.state++;
         }
       } else {
-        schemaStackItem.state = -1;
+        stackItem.state = -1;
       }
       break;
     case 1:
-      schemaStackItem.state = -1;
+      stackItem.state = -1;
       break;
   }
 };
@@ -1345,44 +1354,41 @@ const additionalItemsDataValid = function (schemasStack, dataStack) {
  * 举例：items: 3
  * 符合：data: [3, 4, 5]
  * 不符合: [1, 2]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const itemsDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { state } = schemaStackItem,
-        { data } = dataStackItem;
+const itemsDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { state, data } = stackItem;
   switch (state) {
     case 0:
       dataLen = Array.isArray(data) ? data.length : 0;
       if (dataLen > 0) {
         // 当items是对象时，一定用同一个模式验证
-        const useSameItem = !Array.isArray(schemaStackItem.rawSchema);
+        const useSameItem = !Array.isArray(stackItem.rawSchema);
         if (useSameItem) {
           lastItemsStackItem = null;
           for (let i = dataLen - 1; i >= 0; --i) {
-            schemaProperties({ schemasStack, dataStack, schemaFrom: schemaStackItem.schema[0], upStackItem: schemaStackItem, data: data[i], dataFrom: data, dataName: i });
+            schemaProperties({ stack, schemaFrom: stackItem.schema[0], parent: stackItem, data: data[i], dataFrom: data, dataName: i });
           }
         } else {
-          const { schema } = schemaStackItem,
+          const { schema } = stackItem,
                 itemsLen = schema.length,
                 minLen = Math.min(dataLen, itemsLen);
           additionalLen = dataLen - minLen;
           sepLen = dataLen - additionalLen;
           for (let i = sepLen - 1; i >= 0; --i) {
-            schemaProperties({ schemasStack, dataStack, schemaFrom: schemaStackItem.schema[i], upStackItem: schemaStackItem, data: data[i], dataFrom: data, dataName: i });
+            schemaProperties({ stack, schemaFrom: stackItem.schema[i], parent: stackItem, data: data[i], dataFrom: data, dataName: i });
           }
-          lastItemsStackItem = schemaStackItem;
+          lastItemsStackItem = stackItem;
         }
-        schemaStackItem.state++;
+        stackItem.state++;
       } else {
         lastItemsStackItem = null;
-        schemaStackItem.state = -1;
+        stackItem.state = -1;
       }
       break;
     case 1:
-      schemaStackItem.state = -1;
+      stackItem.state = -1;
       break;
   }
 };
@@ -1404,18 +1410,15 @@ let isExclusiveMaximum, lastExclusiveMaximumStackItem;
  * 举例：maximum: 3
  * 符合：data: [1, 2, 3]
  * 不符合: [4, 5, 6]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const maximumDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const maximumDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   if (typeof data === 'number') {
     let ok = false;
-    // schemaFrom, keyPath, upStackItem三者有一个相同都代表来自同一个上级，说明是与当前maximum是兄弟的then
-    if (isExclusiveMaximum && lastExclusiveMaximumStackItem.upStackItem === schemaStackItem.upStackItem) {
+    // schemaFrom, schemaPath, parent三者有一个相同都代表来自同一个上级，说明是与当前maximum是兄弟的then
+    if (isExclusiveMaximum && lastExclusiveMaximumStackItem.parent === stackItem.parent) {
       // 小于模式
       ok = data < schema;
     } else {
@@ -1423,36 +1426,33 @@ const maximumDataValid = function (schemasStack, dataStack) {
       ok = data <= schema;
     }
     if (!ok) {
-      schemaStackItem.errors.push(schemaStackItem);
+      stackItem.errorItems.push(stackItem);
     }
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 /**
  * exclusiveMaximum关键字处理程序：data值的是否小于schema
  * 举例：exclusiveMaximum: 3
  * 符合：data: [1, 2]
  * 不符合: [3, 4, 5, 6]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const exclusiveMaximumDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const exclusiveMaximumDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   const tp = typeof schema;
   if (tp === 'number') {
     if (typeof data === 'number') {
       if (data >= schema) {
-        schemaStackItem.errors.push(schemaStackItem);
+        stackItem.errorItems.push(stackItem);
       }
     }
   } else {
     isExclusiveMaximum = schema;
-    lastExclusiveMaximumStackItem = schemaStackItem;
+    lastExclusiveMaximumStackItem = stackItem;
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 const maximum = [{ name: 'maximum', schema: { valid: { types: ['number'] } }, data: { valid: maximumDataValid } }, { name: 'exclusiveMaximum', schema: { valid: { types: ['number', 'boolean'] } }, data: { valid: exclusiveMaximumDataValid } }];
 module.exports = maximum;
@@ -1472,17 +1472,14 @@ let isExclusiveMinimum, lastExclusiveMinimumStackItem;
  * 举例：minimum: 3
  * 符合：data: [3, 4, 5]
  * 不符合: [1, 2]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const minimumDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const minimumDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   if (typeof data === 'number') {
     let ok = false;
-    if (isExclusiveMinimum && lastExclusiveMinimumStackItem.upStackItem === schemaStackItem.upStackItem) {
+    if (isExclusiveMinimum && lastExclusiveMinimumStackItem.parent === stackItem.parent) {
       // 大于模式
       ok = data > schema;
     } else {
@@ -1490,36 +1487,33 @@ const minimumDataValid = function (schemasStack, dataStack) {
       ok = data >= schema;
     }
     if (!ok) {
-      schemaStackItem.errors.push(schemaStackItem);
+      stackItem.errorItems.push(stackItem);
     }
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 /**
  * exclusiveMinimum关键字处理程序：data值的是否大于schema
  * 举例：exclusiveMinimum: 3
  * 符合：data: [4, 5]
  * 不符合: [1, 2, 3]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const exclusiveMinimumDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const exclusiveMinimumDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   const tp = typeof schema;
   if (tp === 'number') {
     if (typeof data === 'number') {
       if (data <= schema) {
-        schemaStackItem.errors.push(schemaStackItem);
+        stackItem.errorItems.push(stackItem);
       }
     }
   } else {
     isExclusiveMinimum = schema;
-    lastExclusiveMinimumStackItem = schemaStackItem;
+    lastExclusiveMinimumStackItem = stackItem;
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 const minimum = [{ name: 'minimum', schema: { valid: { types: ['number'] } }, data: { valid: minimumDataValid } }, { name: 'exclusiveMinimum', schema: { valid: { types: ['number', 'boolean'] } }, data: { valid: exclusiveMinimumDataValid } }];
 module.exports = minimum;
@@ -1538,20 +1532,17 @@ module.exports = minimum;
  * 举例：multipleOf: 1.5
  * 符合：data: [1.5, 3, 6]
  * 不符合: [1, 2, 3, 4]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const dataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const dataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   if (typeof data === 'number') {
     if (data % schema !== 0) {
-      schemaStackItem.errors.push(schemaStackItem);
+      stackItem.errorItems.push(stackItem);
     }
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 const multipleOf = [{
   name: 'multipleOf', schema: {
@@ -1573,32 +1564,31 @@ module.exports = multipleOf;
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
-const { schemaProperties } = __webpack_require__(/*! ../common */ "./lib/common.js");
+const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/base/common.js");
 /**
  * not关键字处理程序：data对象的验证结果反转...
  * 举例：not: xxx
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const dataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1] /*, dataStackItem = dataStack[schemaStackItem.dataIndex]*/;
-  const { state } = schemaStackItem;
+const dataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { state } = stackItem;
   switch (state) {
     case 0:
       // 加入not信息
-      schemaProperties({ schemasStack, dataStack, schemaFrom: schemaStackItem.schema, upStackItem: schemaStackItem });
-      schemaStackItem.state++;
+      schemaProperties({ stack, schemaFrom: stackItem.schema, parent: stackItem });
+      stackItem.state++;
       break;
     case 1:
       // 判断not结果
-      if (schemaStackItem.errors.length > 0) {
+      if (stackItem.errorItems.length > 0) {
         // 如果有错，删除错误
-        // schemaStackItem.errors.splice(0, schemaStackItem.errors.length);
-        schemaStackItem.state = -2; // 置状态小于0，代表已经完成所有的过程
+        // stackItem.errorItems.splice(0, stackItem.errorItems.length);
+        stackItem.state = -2; // 置状态小于0，代表已经完成所有的过程
       } else {
         // 如果无错，添加错误...
-        schemaStackItem.errors.push(schemaStackItem);
-        schemaStackItem.state = -1; // 置状态小于0，代表已经完成所有的过程
+        stackItem.errorItems.push(stackItem);
+        stackItem.state = -1; // 置状态小于0，代表已经完成所有的过程
       }
       break;
   }
@@ -1620,46 +1610,39 @@ module.exports = properties;
  * 举例：maxProperties: 2
  * 符合：data: [{}, {"a": 1}, {"a": 1, "b": 2}]
  * 不符合: data: [{"a": 1, "b": 2, "c": 3}]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const maxPropertiesDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const maxPropertiesDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   if (data && typeof data === 'object' && !Array.isArray(data)) {
     let len = 0,
-        err = false,
-        min = schema;
+        err = false;
     for (const n in data) {
       if (data.hasOwnProperty(n)) {
         len++;
-        if (len > min) {
+        if (len > schema) {
           err = true;
           break;
         }
       }
     }
     if (err) {
-      schemaStackItem.errors.push(schemaStackItem);
+      stackItem.errorItems.push(stackItem);
     }
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 /**
  * minProperties关键字处理程序：data字符串长度最大值
  * 举例：minProperties: 2
  * 符合：data: [{"a": 1, "b": 2}, {"a": 1, "b": 2, "c": 3}]
  * 不符合: data: [{}, {"a": 1}]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const minPropertiesDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const minPropertiesDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   if (data && typeof data === 'object' && !Array.isArray(data)) {
     let len = 0;
     for (const n in data) {
@@ -1668,10 +1651,10 @@ const minPropertiesDataValid = function (schemasStack, dataStack) {
       }
     }
     if (len < schema) {
-      schemaStackItem.errors.push(schemaStackItem);
+      stackItem.errorItems.push(stackItem);
     }
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 const valid = function (val) {
   return val >= 0 && val % 1 === 0;
@@ -1688,53 +1671,52 @@ module.exports = strLength;
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
-const { schemaProperties } = __webpack_require__(/*! ../common */ "./lib/common.js");
+const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/base/common.js");
 /**
  * oneOf关键字处理程序：data对象的多个组合验证结果中有一个成功，则成功（所有组合都会执行）...
  * 举例：oneOf: [{"maximum": 3}, {"type": "integer"}]
  * 符合：data: 1.5, 2.5, 4, 5, any non-number
  * 不符合：data: 2, 3, 4.5, 5.5
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const dataValid = function (schemasStack, dataStack) {
+const dataValid = function (stack) {
   // 全部检测完再判断
-  const schemaStackItem = schemasStack[schemasStack.length - 1] /*, dataStackItem = dataStack[schemaStackItem.dataIndex]*/;
-  const { state, runSchemaIndex, schema } = schemaStackItem;
+  const stackItem = stack[stack.length - 1],
+        { state, runSchemaIndex, schema } = stackItem;
   switch (state) {
     case 0:
       if (schema.length === 0) {
-        schemaStackItem.state = -1;
+        stackItem.state = -1;
       } else {
-        schemaStackItem.runSchemaIndex = 0;
-        schemaStackItem.runSchemaErrors = [];
-        schemaStackItem.state++;
+        stackItem.runSchemaIndex = 0;
+        stackItem.runSchemaErrors = [];
+        stackItem.state++;
       }
       break;
     case 1:
-      schemaProperties({ schemasStack, dataStack, schemaFrom: schema[runSchemaIndex], upStackItem: schemaStackItem });
-      schemaStackItem.runSchemaIndex++;
-      schemaStackItem.state++;
+      schemaProperties({ stack, schemaFrom: schema[runSchemaIndex], parent: stackItem });
+      stackItem.runSchemaIndex++;
+      stackItem.state++;
       break;
     case 2:
-      schemaStackItem.runSchemaErrors.push(schemaStackItem.errors);
-      schemaStackItem.errors = [];
+      stackItem.runSchemaErrors.push(stackItem.errorItems);
+      stackItem.errorItems = [];
       if (runSchemaIndex < schema.length) {
-        schemaStackItem.state--;
+        stackItem.state--;
       } else {
         let haveOk = false;
-        const schemaErrors = schemaStackItem.runSchemaErrors;
-        for (const errors of schemaErrors) {
-          if (errors.length === 0) {
+        const schemaErrors = stackItem.runSchemaErrors;
+        for (const errorItems of schemaErrors) {
+          if (errorItems.length === 0) {
             haveOk = true;
             break;
           }
         }
         if (!haveOk) {
-          schemaStackItem.errors.push(schemaStackItem);
-          schemaStackItem.state = -1;
+          stackItem.errorItems.push(stackItem);
+          stackItem.state = -1;
         } else {
-          schemaStackItem.state = -2; // 置状态小于0，代表已经完成所有的过程，等于-1时处理错误信息，等于-2不处理错误信息
+          stackItem.state = -2; // 置状态小于0，代表已经完成所有的过程，等于-1时处理错误信息，等于-2不处理错误信息
         }
       }
       break;
@@ -1757,30 +1739,27 @@ module.exports = properties;
  * 举例：pattern: ['^[abc]+$']
  * 符合：data: "a", "abc", "cde"
  * 不符合: data: "d", "abd", "def", "123", ""
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const dataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const dataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   if (typeof data === 'string') {
     let valid = false;
     for (const val of schema) {
-      const pattern = new RegExp(val);
+      const pattern = typeof val === 'string' ? new RegExp(val) : val;
       if (pattern) {
         valid = pattern.test(data);
         if (valid) break;
       }
     }
     if (!valid) {
-      schemaStackItem.errors.push(schemaStackItem);
+      stackItem.errorItems.push(stackItem);
     }
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
-const pattern = [{ name: 'pattern', schema: { array: true, valid: { types: ['string'] } }, data: { valid: dataValid } }];
+const pattern = [{ name: 'pattern', schema: { array: true, valid: { types: ['regexp'] } }, data: { valid: dataValid } }];
 module.exports = pattern;
 
 /***/ }),
@@ -1797,14 +1776,11 @@ module.exports = pattern;
  * 举例：patternRequired: ["f.*o", "b.*r"]
  * 符合：data: [{ "foo": 1, "bar": 2 }, { "foobar": 3 }]
  * 不符合: data: [{}, { "foo": 1 }, { "bar": 2 }]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const dataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const dataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   if (data && typeof data === 'object' && !Array.isArray(data)) {
     for (const val of schema) {
       const reg = new RegExp(val);
@@ -1817,13 +1793,13 @@ const dataValid = function (schemasStack, dataStack) {
           }
         }
         if (!hasOk) {
-          schemaStackItem.errors.push(schemaStackItem);
+          stackItem.errorItems.push(stackItem);
           break;
         }
       }
     }
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 const patternRequired = [{ name: 'patternRequired', schema: { array: true, valid: { types: ['string'] } }, data: { valid: dataValid } }];
 module.exports = patternRequired;
@@ -1838,22 +1814,19 @@ module.exports = patternRequired;
 /***/ (function(module, exports, __webpack_require__) {
 
 let doProps, doPatternProps, lastPropertiesStackItem, lastPatternPropertiesStackItem;
-const { schemaProperties } = __webpack_require__(/*! ../common */ "./lib/common.js");
+const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/base/common.js");
 /**
  * additionalProperties关键字处理程序，当为false时，不允许添加额外多余项，当为{}时检测额外项
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const additionalPropertiesDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { state } = schemaStackItem,
-        { data } = dataStackItem;
+const additionalPropertiesDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, state } = stackItem;
   let haveProps, havePatternProps, addProps, addLen;
   switch (state) {
     case 0:
-      haveProps = lastPropertiesStackItem && lastPropertiesStackItem.upStackItem === schemaStackItem.upStackItem;
-      havePatternProps = lastPatternPropertiesStackItem && lastPatternPropertiesStackItem.upStackItem === schemaStackItem.upStackItem;
+      haveProps = lastPropertiesStackItem && lastPropertiesStackItem.parent === stackItem.parent;
+      havePatternProps = lastPatternPropertiesStackItem && lastPatternPropertiesStackItem.parent === stackItem.parent;
       addProps = [];
       if (haveProps || havePatternProps) {
         for (const name in data) {
@@ -1866,27 +1839,27 @@ const additionalPropertiesDataValid = function (schemasStack, dataStack) {
       }
       addLen = addProps.length;
       if (addLen > 0) {
-        const { schema } = schemaStackItem;
+        const { schema } = stackItem;
         if (typeof schema === 'boolean') {
           if (!schema) {
-            schemaStackItem.errors.push(schemaStackItem);
-            schemaStackItem.state = -1;
+            stackItem.errorItems.push(stackItem);
+            stackItem.state = -1;
           } else {
-            schemaStackItem.state = -1;
+            stackItem.state = -1;
           }
         } else {
           for (let i = addLen - 1; i >= 0; --i) {
             const propName = addProps[i];
-            schemaProperties({ schemasStack, dataStack, schemaFrom: schemaStackItem.schema, upStackItem: schemaStackItem, data: data[propName], dataFrom: data, dataName: propName });
+            schemaProperties({ stack, schemaFrom: stackItem.schema, parent: stackItem, data: data[propName], dataFrom: data, dataName: propName });
           }
-          schemaStackItem.state++;
+          stackItem.state++;
         }
       } else {
-        schemaStackItem.state = -1;
+        stackItem.state = -1;
       }
       break;
     case 1:
-      schemaStackItem.state = -1;
+      stackItem.state = -1;
       break;
   }
 };
@@ -1895,14 +1868,11 @@ const additionalPropertiesDataValid = function (schemasStack, dataStack) {
  * 举例：{"patternProperties":{"^fo.*$":{"type":"string"},"^ba.*$":{"type":"number"}}}
  * 符合：data: [{}, {"foo": "a"}, {"foo": "a", "bar": 1}]
  * 不符合: data: [{"foo": 1}, {"foo": "a", "bar": "b"}]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const patternPropertiesDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { state, schema } = schemaStackItem;
+const patternPropertiesDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, state, schema } = stackItem;
   let doIt;
   switch (state) {
     case 0:
@@ -1915,7 +1885,7 @@ const patternPropertiesDataValid = function (schemasStack, dataStack) {
               const reg = new RegExp(propName);
               for (const dataName in data) {
                 if (data.hasOwnProperty(dataName) && reg.test(dataName)) {
-                  if (schemaProperties({ schemasStack, dataStack, schemaFrom: schema[propName], upStackItem: schemaStackItem, data: data[dataName], dataFrom: data, dataName })) {
+                  if (schemaProperties({ stack, schemaFrom: schema[propName], parent: stackItem, data: data[dataName], dataFrom: data, dataName })) {
                     doIt = true;
                     doPatternProps[dataName] = true;
                   }
@@ -1926,15 +1896,15 @@ const patternPropertiesDataValid = function (schemasStack, dataStack) {
         }
       }
       if (!doIt) {
-        schemaStackItem.state = -1;
+        stackItem.state = -1;
         doPatternProps = null;
       } else {
-        schemaStackItem.state++;
+        stackItem.state++;
       }
-      lastPatternPropertiesStackItem = schemaStackItem;
+      lastPatternPropertiesStackItem = stackItem;
       break;
     case 1:
-      schemaStackItem.state = -1;
+      stackItem.state = -1;
       break;
   }
 };
@@ -1955,14 +1925,11 @@ const patternPropertiesValid = function (val) {
  * 举例：{"properties":{"foo":{"type":"string"},"bar":{"type":"number","minimum":2}}}
  * 符合：data: [{}, {"foo": "a"}, {"foo": "a", "bar": 2}]
  * 不符合: data: [{"foo": 1}, {"foo": "a", "bar": 1}]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const propertiesDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { state, schema } = schemaStackItem;
+const propertiesDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, state, schema } = stackItem;
   let doIt;
   switch (state) {
     case 0:
@@ -1972,7 +1939,7 @@ const propertiesDataValid = function (schemasStack, dataStack) {
         if (schema && typeof schema === 'object' && !Array.isArray(schema)) {
           for (const propName in schema) {
             if (schema.hasOwnProperty(propName) && data.hasOwnProperty(propName)) {
-              if (schemaProperties({ schemasStack, dataStack, schemaFrom: schema[propName], upStackItem: schemaStackItem, data: data[propName], dataFrom: data, dataName: propName })) {
+              if (schemaProperties({ stack, schemaFrom: schema[propName], parent: stackItem, data: data[propName], dataFrom: data, dataName: propName })) {
                 doIt = true;
                 doProps[propName] = true;
               }
@@ -1981,15 +1948,15 @@ const propertiesDataValid = function (schemasStack, dataStack) {
         }
       }
       if (!doIt) {
-        schemaStackItem.state = -1;
+        stackItem.state = -1;
         doProps = null;
       } else {
-        schemaStackItem.state++;
+        stackItem.state++;
       }
-      lastPropertiesStackItem = schemaStackItem;
+      lastPropertiesStackItem = stackItem;
       break;
     case 1:
-      schemaStackItem.state = -1;
+      stackItem.state = -1;
       break;
   }
 };
@@ -2005,20 +1972,17 @@ module.exports = properties;
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
-const { schemaProperties } = __webpack_require__(/*! ../common */ "./lib/common.js");
+const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/base/common.js");
 /**
  * propertyNames关键字处理程序：data对象的子属性名称的验证...
  * 举例：{"propertyNames":{"foo":{"type":"string"},"bar":{"type":"number","minimum":2}}}
  * 符合：data: [{}, {"foo": "a"}, {"foo": "a", "bar": 2}]
  * 不符合: data: [{"foo": 1}, {"foo": "a", "bar": 1}]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const dataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { state, schema } = schemaStackItem;
+const dataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, state, schema } = stackItem;
   let doIt;
   switch (state) {
     case 0:
@@ -2027,7 +1991,7 @@ const dataValid = function (schemasStack, dataStack) {
         if (schema && typeof schema === 'object' && !Array.isArray(schema)) {
           for (const dataName in data) {
             if (data.hasOwnProperty(dataName)) {
-              if (schemaProperties({ schemasStack, dataStack, schemaFrom: schema, upStackItem: schemaStackItem, data: dataName, dataFrom: data })) {
+              if (schemaProperties({ stack, schemaFrom: schema, parent: stackItem, data: dataName, dataFrom: data })) {
                 doIt = true;
               }
             }
@@ -2035,13 +1999,13 @@ const dataValid = function (schemasStack, dataStack) {
         }
       }
       if (!doIt) {
-        schemaStackItem.state = -1;
+        stackItem.state = -1;
       } else {
-        schemaStackItem.state++;
+        stackItem.state++;
       }
       break;
     case 1:
-      schemaStackItem.state = -1;
+      stackItem.state = -1;
       break;
   }
 };
@@ -2062,23 +2026,20 @@ module.exports = propertyNames;
  * 举例：required: ["a", "b"]
  * 符合：data: [{"a": 1, "b": 2}, {"a": 1, "b": 2, "c": 3}]
  * 不符合: data: [{}, {"a": 1}, {"c": 3, "d":4}]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const dataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const dataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   if (data && typeof data === 'object' && !Array.isArray(data)) {
     for (const val of schema) {
       if (!data.hasOwnProperty(val)) {
-        schemaStackItem.errors.push(schemaStackItem);
+        stackItem.errorItems.push(stackItem);
         break;
       }
     }
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 const required = [{ name: 'required', schema: { array: true, valid: { types: ['string'] } }, data: { valid: dataValid } }];
 module.exports = required;
@@ -2097,40 +2058,34 @@ module.exports = required;
  * 举例：maxLength: 5
  * 符合：data: ["abc", "abcd", "abcde"]
  * 不符合: data: ["abcdef"]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const maxLengthDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const maxLengthDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   if (typeof data === 'string') {
     if (data.length > schema) {
-      schemaStackItem.errors.push(schemaStackItem);
+      stackItem.errorItems.push(stackItem);
     }
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 /**
  * minLength关键字处理程序：data字符串长度最大值
  * 举例：minLength: 3
  * 符合：data: ["abc", "abcd", "abcde"]
  * 不符合: data: ["ab", "a"]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const minLengthDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const minLengthDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   if (typeof data === 'string') {
     if (data.length < schema) {
-      schemaStackItem.errors.push(schemaStackItem);
+      stackItem.errorItems.push(stackItem);
     }
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 const valid = function (val) {
   return val >= 0 && val % 1 === 0;
@@ -2169,15 +2124,11 @@ const types = {
  * 举例：type: ['string', 'number']
  * 符合：data: 1, 100, 'a', 'abc'
  * 不符合: data: {}, null
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const dataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
-  // type: ['string', 'number']
+const dataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   let valid = false;
   for (const val of schema) {
     const type = types[val];
@@ -2191,11 +2142,14 @@ const dataValid = function (schemasStack, dataStack) {
     }
   }
   if (!valid) {
-    schemaStackItem.errors.push(schemaStackItem);
+    stackItem.errorItems.push(stackItem);
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
-const type = [{ name: 'type', schema: { array: true, valid: { types: ['string'] } }, data: { valid: dataValid }, ext: { types } }];
+const dataError = function (stackItem) {
+  stackItem.message = 'hi';
+};
+const type = [{ name: 'type', schema: { array: true, valid: { types: ['string'] } }, data: { valid: dataValid, error: dataError }, ext: { types } }];
 module.exports = type;
 
 /***/ }),
@@ -2214,20 +2168,17 @@ const uniqueItem = nebUtil.array.uniqueItem;
  * 举例：uniqueItems: true
  * 符合：data: [[], [1, 2, 3], [1, "a"]]
  * 不符合: data: [[1, 1, 2], [1, {"a": "b", "b": "c"}, {"b": "c", "a": "b"}]
- * @param schemasStack 模型栈
- * @param dataStack 数据栈
+ * @param stack 栈
  */
-const uniqueItemsDataValid = function (schemasStack, dataStack) {
-  const schemaStackItem = schemasStack[schemasStack.length - 1],
-        dataStackItem = dataStack[schemaStackItem.dataIndex];
-  const { data } = dataStackItem,
-        { schema } = schemaStackItem;
+const uniqueItemsDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
   if (Array.isArray(data) && schema) {
     if (!uniqueItem(data)) {
-      schemaStackItem.errors.push(schemaStackItem);
+      stackItem.errorItems.push(stackItem);
     }
   }
-  schemaStackItem.state = -1;
+  stackItem.state = -1;
 };
 const strLength = [{ name: 'uniqueItems', schema: { valid: { types: ['boolean'] } }, data: { valid: uniqueItemsDataValid } }];
 module.exports = strLength;
@@ -2599,93 +2550,6 @@ module.exports = common;
 
 /***/ }),
 
-/***/ "./lib/date/index.js":
-/*!***************************!*\
-  !*** ./lib/date/index.js ***!
-  \***************************/
-/*! no static exports found */
-/***/ (function(module, exports) {
-
-const replaceReg = /(yyyy|yy|MM?|dd?|HH?|ss?|mm?)/g,
-      stringToDateRegs = {
-  "yyyy": [{ num: 4, reg: /yyyy/ }, { num: 2, reg: /yy/ }],
-  "MM": [{ num: 2, reg: /MM/ }, { num: 1, reg: /M/ }],
-  "dd": [{ num: 2, reg: /dd/ }, { num: 1, reg: /d/ }],
-  "HH": [{ num: 2, reg: /HH/ }, { num: 1, reg: /H/ }],
-  "mm": [{ num: 2, reg: /mm/ }, { num: 1, reg: /m/ }],
-  "ss": [{ num: 2, reg: /ss/ }, { num: 1, reg: /s/ }]
-},
-      hrReg = /-/g;
-/**
- * 从日期/时间获取格式化字符串
- * @param date {Date}
- * @param format {String} 格式化format "yyyy-MM-dd HH:mm:ss"
- * @returns {String}
- */
-const toFormatString = function (date, format) {
-  if (!date) return "";
-  format = format || "yyyy-MM-dd HH:mm:ss";
-  date = new Date(date);
-  if (!(date instanceof Date)) return "";
-  const dict = {
-    "yyyy": date.getFullYear(),
-    "yy": (date.getFullYear() + "").substr(2),
-    "M": date.getMonth() + 1,
-    "d": date.getDate(),
-    "H": date.getHours(),
-    "m": date.getMinutes(),
-    "s": date.getSeconds(),
-    "MM": ("" + (date.getMonth() + 101)).substr(1),
-    "dd": ("" + (date.getDate() + 100)).substr(1),
-    "HH": ("" + (date.getHours() + 100)).substr(1),
-    "mm": ("" + (date.getMinutes() + 100)).substr(1),
-    "ss": ("" + (date.getSeconds() + 100)).substr(1)
-  };
-  return format.replace(replaceReg, function () {
-    return dict[arguments[0]];
-  });
-};
-/**
- * 从格式化字符串获取日期/时间
- * @param dateStr {String} 日期/时间字符串
- * @param format {String} 格式化format  默认"yyyy-MM-dd HH:mm:ss"
- * @returns {*}
- */
-const fromFormatString = function (dateStr, format) {
-  if (format) {
-    if (dateStr.length < format.length) {
-      return null;
-    }
-    const date = { "yyyy": 0, "MM": 0, "dd": 0, "HH": 0, "mm": 0, "ss": 0 };
-    let attr, testRegs, index, i, testLen, num;
-    for (attr in stringToDateRegs) {
-      testRegs = stringToDateRegs[attr];
-      for (i = 0, testLen = testRegs.length; i < testLen; ++i) {
-        if ((index = format.search(testRegs[i].reg)) !== -1) {
-          num = testRegs[i].num;
-          date[attr] = dateStr.substr(index, num);
-          if (date[attr]) {
-            date[attr] = parseInt(date[attr]);
-            break;
-          }
-        }
-      }
-    }
-    return new Date(date.yyyy, date.MM - 1, date.dd, date.HH, date.mm, date.ss, 0);
-  }
-  if (dateStr) {
-    if (typeof dateStr === "string") {
-      dateStr = dateStr.replace(hrReg, "/");
-    }
-    return new Date(dateStr);
-  }
-  return new Date();
-};
-const util = { toFormatString, fromFormatString };
-module.exports = util;
-
-/***/ }),
-
 /***/ "./lib/index.js":
 /*!**********************!*\
   !*** ./lib/index.js ***!
@@ -2697,8 +2561,7 @@ const common = __webpack_require__(/*! ./common/index */ "./lib/common/index.js"
 const object = __webpack_require__(/*! ./object/index */ "./lib/object/index.js");
 const string = __webpack_require__(/*! ./string/index */ "./lib/string/index.js");
 const array = __webpack_require__(/*! ./array/index */ "./lib/array/index.js");
-const date = __webpack_require__(/*! ./date/index */ "./lib/date/index.js");
-const util = { common, object, string, array, date };
+const util = { common, object, string, array };
 module.exports = util;
 
 /***/ }),

@@ -46,8 +46,8 @@ const validator = new ValidatorSchema(schema, options);
 const valid = validator.validate([1, 'a']);
 // Output verification results
 console.log(valid);
-// Validation fails and errors can be returned through the erros object
-if (!valid) console.log(validator.errors);
+// Validation fails and errorItems can be returned through the erros object
+if (!valid) console.log(validator.errorItems);
 ```
 
 ## Keywords Introduction
