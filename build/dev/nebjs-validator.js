@@ -163,10 +163,6 @@ module.exports = Schema;
 /***/ (function(module, exports, __webpack_require__) {
 
 const keys = __webpack_require__(/*! ./keys */ "./lib/base/keys.js");
-const nebUtil = __webpack_require__(/*! nebjs-util */ "./node_modules/nebjs-util/build/dev/nebjs-util.js");
-const objPick = nebUtil.object.pick;
-// const objCopy = nebUtil.object.copy;
-const arrCopy = nebUtil.array.copy;
 
 /**
  * 遍历属性中的所有KEY并转入栈中，待进一步处理..
@@ -179,31 +175,34 @@ const arrCopy = nebUtil.array.copy;
  *  data: {}, 数据
  *  dataFrom: {}, 数据来源
  *  dataName: '', 数据来源属性名称
+ *  dataIndex: '', 数据来源索引值
  * }
  *
  // 栈结构: keyword, schema, schemaFrom, schemaPath, parent, children, errorItems, state, dataIndex
  // 数据栈结构: dataName, data, dataFrom, dataPath
  */
 const schemaProperties = function (props) {
-  const { stack, parent = null, dataFrom = null, dataName = '' } = props,
-        upSchemaPath = parent ? parent.schemaPath + '/' + parent.keyword : '';
-  let { schemaFrom, data } = props;
-  let doIt = false;
+  const { stack, parent = null, dataFrom = null, dataName, dataIndex } = props;
+  let { schemaFrom, data } = props,
+      doIt = false;
   if (schemaFrom) {
     const isArr = Array.isArray(schemaFrom) && schemaFrom.length > 0,
           isObj = schemaFrom.constructor === Object;
     if (isArr || isObj) {
-      let schemaPath, dataPath;
+      let schemaPath, dataPath, upSchemaPath, upDataPath;
+      if (parent) {
+        upSchemaPath = parent.schemaPath;
+        upDataPath = parent.dataPath;
+      } else {
+        upSchemaPath = '';
+        upDataPath = '';
+      }
       if (data !== undefined) {
-        schemaPath = upSchemaPath + (dataName ? '/' + dataName : '');
-        if (parent) {
-          dataPath = parent.dataPath + '/' + parent.dataName;
-        } else {
-          dataPath = '';
-        }
+        schemaPath = upSchemaPath + (dataName !== undefined ? '/' + dataName : dataIndex !== undefined ? '/' + dataIndex : '');
+        dataPath = upSchemaPath + (dataName !== undefined ? '.' + dataName : dataIndex !== undefined ? '[' + dataIndex + ']' : '');
       } else {
         schemaPath = upSchemaPath;
-        dataPath = parent.dataPath;
+        dataPath = upDataPath;
         data = parent.data;
       }
       const schemaLen = stack.length;
@@ -220,7 +219,7 @@ const schemaProperties = function (props) {
               const schema = array && !Array.isArray(rawSchema) ? [rawSchema] : rawSchema;
               const stkItem = {
                 keyword, schema, rawSchema, schemaFrom: schFrom, schemaPath, parent, children: [], errorItems: [], state: 0,
-                data, dataFrom, dataName, dataPath
+                data, dataFrom, dataName, dataIndex, dataPath
               };
               if (isArr) stkItem.schemaFromIndex = i;
               if (parent) parent.children.push(stkItem);
@@ -323,7 +322,7 @@ const validateSchema = function (stackItem) {
  */
 const validate = function (data) {
   this.data = data;
-  const errors = [],
+  const errorItems = this.errorItems = [],
         stack = [],
         schemas = this.schemas;
   schemaProperties({ stack, schemaFrom: schemas, data, dataFrom: null });
@@ -344,28 +343,27 @@ const validate = function (data) {
       } else pop = true;
     } else pop = true;
     if (pop) {
-      const { parent, errorItems } = stackItem;
-      if (state === -1 && errorItems.length > 0) {
-        const to = parent ? parent.errorItems : errors;
-        for (const errorItem of errorItems) {
+      const { parent, errorItems: stackErrorItems } = stackItem;
+      if (state === -1 && stackErrorItems.length > 0) {
+        const to = parent ? parent.errorItems : errorItems;
+        for (const errorItem of stackErrorItems) {
           to.push(errorItem);
         }
       }
       stack.pop();
     }
   }
-  this.errors = arrCopy([], errors, {
-    multi: true, filter: function (array, stackItems, stackItem /*, index*/) {
-      const obj = {};
+  if (errorItems.length > 0) {
+    for (const stackItem of errorItems) {
       const { keyword } = stackItem,
             option = keys.regKeywords[keyword].option,
             { data } = option,
             { error } = data;
-      if (error) error(stackItem);
-      return { value: objPick(obj, stackItem, { pick: ['data', 'message', 'keyword', 'schemaPath', 'schema', 'rawSchema'] }) };
+      if (error) error(stackItem, option);
     }
-  });
-  return errors.length === 0;
+    return false;
+  }
+  return true;
 };
 module.exports = { validate, schemaProperties };
 
@@ -466,23 +464,28 @@ module.exports = { registerKeywords, getRegisterKeywordsInfo, regKeys, regKeywor
   !*** ./lib/error/index.js ***!
   \****************************/
 /*! no static exports found */
-/***/ (function(module, exports) {
+/***/ (function(module, exports, __webpack_require__) {
 
-// const nebUtil = require('nebjs-util');
-// const objPick = nebUtil.object.pick;
+const nebUtil = __webpack_require__(/*! nebjs-util */ "./node_modules/nebjs-util/build/dev/nebjs-util.js");
+const objPick = nebUtil.object.pick;
 // const objCopy = nebUtil.object.copy;
-// const arrCopy = nebUtil.array.copy;
+const arrCopy = nebUtil.array.copy;
 /**
  * 输出错误
  * @param option 输出配置
  */
 const writeOutErrors = function (option = {}) {
   const validator = this,
-        { errors } = validator;
+        { errorItems } = validator;
   const { simple = true } = option;
   let out;
   if (simple) {
-    out = errors;
+    out = arrCopy([], errorItems, {
+      multi: true, filter: function (array, stackItems, stackItem /*, index*/) {
+        const obj = {};
+        return { value: objPick(obj, stackItem, { pick: ['keyword', 'message', 'params'] }) };
+      }
+    });
   }
   // 开始处理错误...
   return out;
@@ -517,7 +520,6 @@ const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/ba
  * 举例：allOf: [{"maximum": 3}, {"type": "integer"}]
  * 符合：data: [2, 3]
  * 不符合：data: [1.5, 2.5, 4, 4.5, 5, 5.5, any non-number]
- * @param stack 栈
  */
 const dataValid = function (stack) {
   // 方案一：全部检测完再判断
@@ -553,6 +555,8 @@ const dataValid = function (stack) {
           }
         }
         if (haveErr) {
+          const { dataPath } = stackItem;
+          stackItem.message = 'data' + dataPath + ' should match some schema in allOf';
           stackItem.errorItems.push(stackItem);
           stackItem.state = -1;
         } else {
@@ -580,7 +584,9 @@ const dataValid = function (stack) {
       break;
     case 2:
       if (stackItem.errorItems.length > 0) {
-        stackItem.errorItems = [Object.assign({}, stackItem)];
+        stackItem.message = 'data' + dataPath + ' should match some schema in allOf';
+        stackItem.errorItems.push(stackItem);
+        stackItem.errorItems.push(stackItem);
         stackItem.state = -1;
       } else if (runSchemaIndex === schema.length) {
         stackItem.state = -1;
@@ -608,7 +614,6 @@ const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/ba
  * 举例：anyOf: [{"maximum": 3}, {"type": "integer"}]
  * 符合：data: [1.5, 2, 2.5, 3, 4, 5, any non-number]
  * 不符合：data: [4.5, 5.5]
- * @param stack 栈
  */
 const dataValid = function (stack) {
   // 检测到任何错误即结束
@@ -632,7 +637,9 @@ const dataValid = function (stack) {
       if (stackItem.errorItems.length === 0) {
         stackItem.state = -1;
       } else if (runSchemaIndex === schema.length) {
-        stackItem.errorItems = [Object.assign({}, stackItem)];
+        const { dataPath } = stackItem;
+        stackItem.message = 'data' + dataPath + ' should match some schema in anyOf';
+        stackItem.errorItems.push(stackItem);
         stackItem.state = -1;
       } else {
         stackItem.errorItems = [];
@@ -658,12 +665,15 @@ module.exports = properties;
  * 举例：maxItems: 3
  * 符合：data: [[], [1], [1, 2, 3]]
  * 不符合: data: [[1, 2, 3, 4]]
- * @param stack 栈
  */
 const maxItemsDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
         { schema, data } = stackItem;
   if (Array.isArray(data) && data.length > schema) {
+    const { dataPath } = stackItem,
+          maxItems = schema;
+    stackItem.params = { maxItems };
+    stackItem.message = 'data' + dataPath + ' should NOT have less than ' + maxItems + ' items';
     stackItem.errorItems.push(stackItem);
   }
   stackItem.state = -1;
@@ -673,20 +683,28 @@ const maxItemsDataValid = function (stack) {
  * 举例：minItems: 3
  * 符合：data: [[1, 2, 3, 4], [1, 2, 3]]
  * 不符合: data: [[], [1]]
- * @param stack 栈
  */
 const minItemsDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
         { schema, data } = stackItem;
   if (Array.isArray(data) && data.length < schema) {
+    const { dataPath } = stackItem,
+          minItems = schema;
+    stackItem.params = { minItems };
+    stackItem.message = 'data' + dataPath + ' should NOT have less than ' + minItems + ' items';
     stackItem.errorItems.push(stackItem);
   }
   stackItem.state = -1;
 };
-const valid = function (val) {
+/**
+ * 关键字对应模型值验证程序
+ * @param val
+ * @returns {boolean}
+ */
+const schemaValueValid = function (val) {
   return val >= 0 && val % 1 === 0;
 };
-const strLength = [{ name: 'maxItems', schema: { valid: { types: ['number'], value: valid } }, data: { valid: maxItemsDataValid } }, { name: 'minItems', schema: { valid: { types: ['number'], value: valid } }, data: { valid: minItemsDataValid } }];
+const strLength = [{ name: 'maxItems', schema: { valid: { types: ['number'], value: schemaValueValid } }, data: { valid: maxItemsDataValid } }, { name: 'minItems', schema: { valid: { types: ['number'], value: schemaValueValid } }, data: { valid: minItemsDataValid } }];
 module.exports = strLength;
 
 /***/ }),
@@ -705,12 +723,14 @@ const equal = nebUtil.common.equal;
  * 举例：const: [1, 2, 3]
  * 符合：data: [1, 2, 3]
  * 不符合: [1, 2, 3, 4]
- * @param stack 栈
  */
 const dataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
         { schema, data } = stackItem;
   if (!equal(schema, data)) {
+    const { dataPath } = stackItem;
+    stackItem.params = { const: schema };
+    stackItem.message = 'data' + dataPath + ' should be equal to const';
     stackItem.errorItems.push(stackItem);
   }
   stackItem.state = -1;
@@ -733,7 +753,6 @@ const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/ba
  * 举例：contains: { "type": "integer" }
  * 符合：data: [[1], [1, "foo"]]
  * 不符合: [[], ["foo", "bar"]]
- * @param stack 栈
  */
 const dataValid = function (stack) {
   // 方案一：全部检测完再判断
@@ -742,6 +761,9 @@ const dataValid = function (stack) {
     case 0:
       if (Array.isArray(data)) {
         if (data.length === 0) {
+          const {dataPath} = stackItem;
+          stackItem.params = {};
+          stackItem.message = 'data' + dataPath + ' should contain a valid item';
           stackItem.errorItems.push(stackItem);
           stackItem.state = -1;
         } else {
@@ -773,6 +795,9 @@ const dataValid = function (stack) {
           }
         }
         if (!haveOk) {
+          const {dataPath} = stackItem;
+          stackItem.params = {};
+          stackItem.message = 'data' + dataPath + ' should contain a valid item';
           stackItem.errorItems.push(stackItem);
           stackItem.state = -1;
         } else {
@@ -788,6 +813,9 @@ const dataValid = function (stack) {
     case 0:
       if (Array.isArray(data)) {
         if (data.length === 0) {
+          const { dataPath } = stackItem;
+          stackItem.params = {};
+          stackItem.message = 'data' + dataPath + ' should contain a valid item';
           stackItem.errorItems.push(stackItem);
           stackItem.state = -1;
         } else {
@@ -807,7 +835,10 @@ const dataValid = function (stack) {
       if (stackItem.errorItems.length === 0) {
         stackItem.state = -1;
       } else if (runDataIndex === data.length) {
-        stackItem.errorItems = [Object.assign({}, stackItem)];
+        const { dataPath } = stackItem;
+        stackItem.params = {};
+        stackItem.message = 'data' + dataPath + ' should contain a valid item';
+        stackItem.errorItems.push(stackItem);
         stackItem.state = -1;
       } else {
         stackItem.errorItems = [];
@@ -831,10 +862,9 @@ module.exports = contains;
 const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/base/common.js");
 /**
  * dependencies关键字处理程序：data对象的子属性验证...
- * 举例：{"dependencies":{"foo": ["bar", "baz"]}}
+ * 举例：{"dependencies": {"foo": ["bar", "baz"]}}
  * 符合：data: [{"foo": 1, "bar": 2, "baz": 3}, {}, {"a": 1}]
  * 不符合: data: [{"foo": 1}, {"foo": 1, "bar": 2}, {"foo": 1, "baz": 3}]
- * @param stack 栈
  */
 const dataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -849,14 +879,23 @@ const dataValid = function (stack) {
             if (schema.hasOwnProperty(propName) && data.hasOwnProperty(propName)) {
               const propSchema = schema[propName];
               if (Array.isArray(propSchema)) {
-                let hasError = false;
-                for (const name of propSchema) {
-                  if (name && typeof name === 'string' && !data.hasOwnProperty(name)) {
-                    hasError = true;
-                    break;
+                const dependCount = propSchema.length;
+                if (dependCount > 0) {
+                  let name,
+                      hasError = false;
+                  for (name of propSchema) {
+                    if (name && typeof name === 'string' && !data.hasOwnProperty(name)) {
+                      hasError = true;
+                      break;
+                    }
+                  }
+                  if (hasError) {
+                    const { dataPath } = stackItem;
+                    stackItem.params = { propName, missingProperty: name, dependCount, depend: propSchema, depends: propSchema };
+                    stackItem.message = 'data' + dataPath + ' should be equal to constant';
+                    stackItem.errorItems.push(stackItem);
                   }
                 }
-                if (hasError) stackItem.errorItems.push(stackItem);
               } else if (typeof schema === 'object') {
                 if (schemaProperties({ stack, schemaFrom: propSchema, parent: stackItem })) doIt = true;
               }
@@ -894,7 +933,6 @@ const equal = nebUtil.common.equal;
  * 举例：enum: [ 2, "foo", {"foo": "bar" }, [1, 2, 3] ]
  * 符合：data: 2, "foo", {"foo": "bar"}, [1, 2, 3]
  * 不符合: 1, "bar", {"foo": "baz"}, [1, 2, 3, 4], any value not in the array
- * @param stack 栈
  */
 const dataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -907,6 +945,9 @@ const dataValid = function (stack) {
     }
   }
   if (!valid) {
+    const { dataPath } = stackItem;
+    stackItem.params = { enum: schema };
+    stackItem.message = 'data' + dataPath + ' should be equal to one of the enum values';
     stackItem.errorItems.push(stackItem);
   }
   stackItem.state = -1;
@@ -1053,7 +1094,6 @@ let lastFormat, isFormatExclusiveMaximum, lastFormatExclusiveMaximumStackItem, i
  * 举例：formatMinimum: 3
  * 符合：data: [3, 4, 5]
  * 不符合: [1, 2]
- * @param stack 栈
  */
 const formatMinimumDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -1061,16 +1101,13 @@ const formatMinimumDataValid = function (stack) {
   if (typeof data === 'string' && lastFormat) {
     const fnf = formatsNumber[lastFormat];
     if (fnf && typeof fnf === 'function') {
-      let ok = false;
-      // schemaFrom, schemaPath, parent三者有一个相同都代表来自同一个上级，说明是与当前formatMinimum是兄弟的then
-      if (isFormatExclusiveMinimum && lastFormatExclusiveMinimumStackItem.parent === stackItem.parent) {
-        // 大于模式
-        ok = fnf(data) > fnf(schema);
-      } else {
-        // 大于等于模式
-        ok = fnf(data) >= fnf(schema);
-      }
-      if (!ok) {
+      const exclusive = isFormatExclusiveMinimum && lastFormatExclusiveMinimumStackItem.parent === stackItem.parent;
+      if (!(exclusive ? fnf(data) > fnf(schema) : fnf(data) >= fnf(schema))) {
+        const { dataPath } = stackItem,
+              comparison = exclusive ? '>=' : '>',
+              formatMinimum = schema;
+        stackItem.params = { comparison, formatMinimum, exclusive };
+        stackItem.message = 'data' + dataPath + ' should be ' + comparison + ' ' + formatMinimum;
         stackItem.errorItems.push(stackItem);
       }
     }
@@ -1082,7 +1119,6 @@ const formatMinimumDataValid = function (stack) {
  * 举例：formatExclusiveMinimum: 3
  * 符合：data: [4, 5]
  * 不符合: [1, 2, 3]
- * @param stack 栈
  */
 const formatExclusiveMinimumDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -1093,6 +1129,11 @@ const formatExclusiveMinimumDataValid = function (stack) {
       const fnf = formatsNumber[lastFormat];
       if (fnf && typeof fnf === 'function') {
         if (fnf(data) <= fnf(schema)) {
+          const { dataPath } = stackItem,
+                comparison = '<',
+                formatExclusiveMinimum = schema;
+          stackItem.params = { comparison, formatExclusiveMinimum, exclusive: true };
+          stackItem.message = 'data' + dataPath + ' should be ' + comparison + ' ' + formatExclusiveMinimum;
           stackItem.errorItems.push(stackItem);
         }
       }
@@ -1108,7 +1149,6 @@ const formatExclusiveMinimumDataValid = function (stack) {
  * 举例：formatMaximum: 3
  * 符合：data: [1, 2, 3]
  * 不符合: [4, 5, 6]
- * @param stack 栈
  */
 const formatMaximumDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -1116,16 +1156,13 @@ const formatMaximumDataValid = function (stack) {
   if (lastFormat && typeof data === 'string') {
     const fnf = formatsNumber[lastFormat];
     if (fnf && typeof fnf === 'function') {
-      let ok = false;
-      // schemaFrom, schemaPath, parent三者有一个相同都代表来自同一个上级，说明是与当前formatMaximum是兄弟的then
-      if (isFormatExclusiveMaximum && lastFormatExclusiveMaximumStackItem.parent === stackItem.parent) {
-        // 小于模式
-        ok = fnf(data) < fnf(schema);
-      } else {
-        // 小于等于模式
-        ok = fnf(data) <= fnf(schema);
-      }
-      if (!ok) {
+      const exclusive = isFormatExclusiveMaximum && lastFormatExclusiveMaximumStackItem.parent === stackItem.parent;
+      if (!(exclusive ? fnf(data) < fnf(schema) : fnf(data) <= fnf(schema))) {
+        const { dataPath } = stackItem,
+              comparison = exclusive ? '<=' : '<',
+              formatMaximum = schema;
+        stackItem.params = { comparison, formatMaximum, exclusive };
+        stackItem.message = 'data' + dataPath + ' should be ' + comparison + ' ' + formatMaximum;
         stackItem.errorItems.push(stackItem);
       }
     }
@@ -1137,7 +1174,6 @@ const formatMaximumDataValid = function (stack) {
  * 举例：formatExclusiveMaximum: 3
  * 符合：data: [1, 2]
  * 不符合: [3, 4, 5, 6]
- * @param stack 栈
  */
 const formatExclusiveMaximumDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -1148,6 +1184,11 @@ const formatExclusiveMaximumDataValid = function (stack) {
       const fnf = formatsNumber[lastFormat];
       if (fnf && typeof fnf === 'function') {
         if (fnf(data) >= fnf(schema)) {
+          const { dataPath } = stackItem,
+                comparison = '>',
+                formatExclusiveMaximum = schema;
+          stackItem.params = { comparison, formatExclusiveMaximum, exclusive: true };
+          stackItem.message = 'data' + dataPath + ' should be ' + comparison + ' ' + formatExclusiveMaximum;
           stackItem.errorItems.push(stackItem);
         }
       }
@@ -1163,7 +1204,6 @@ const formatExclusiveMaximumDataValid = function (stack) {
  * 举例：format: ['phone']
  * 符合：data: 13511111111
  * 不符合: data: 1 123 44456
- * @param stack 栈
  */
 const formatDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -1178,6 +1218,9 @@ const formatDataValid = function (stack) {
         ok = fmt(data);
       }
       if (!ok) {
+        const { dataPath } = stackItem;
+        stackItem.params = { format: schema };
+        stackItem.message = 'data' + dataPath + ' should match format ' + schema.toString();
         stackItem.errorItems.push(stackItem);
         lastFormat = null;
       } else {
@@ -1187,7 +1230,7 @@ const formatDataValid = function (stack) {
   }
   stackItem.state = -1;
 };
-const properties = [{ name: 'formatMinimum', schema: { only: true, valid: { types: ['string'] } }, data: { valid: formatMinimumDataValid } }, { name: 'formatExclusiveMinimum', schema: { only: true, valid: { types: ['string', 'boolean'] } }, data: { valid: formatExclusiveMinimumDataValid } }, { name: 'formatMaximum', schema: { only: true, valid: { types: ['string'] } }, data: { valid: formatMaximumDataValid } }, { name: 'formatExclusiveMaximum', schema: { only: true, valid: { types: ['string', 'boolean'] } }, data: { valid: formatExclusiveMaximumDataValid } }, { name: 'format', schema: { only: true, valid: { types: ['string'] } }, data: { valid: formatDataValid }, ext: { formats } }];
+const properties = [{ name: 'formatMinimum', schema: { valid: { types: ['string'] } }, data: { valid: formatMinimumDataValid } }, { name: 'formatExclusiveMinimum', schema: { valid: { types: ['string', 'boolean'] } }, data: { valid: formatExclusiveMinimumDataValid } }, { name: 'formatMaximum', schema: { valid: { types: ['string'] } }, data: { valid: formatMaximumDataValid } }, { name: 'formatExclusiveMaximum', schema: { valid: { types: ['string', 'boolean'] } }, data: { valid: formatExclusiveMaximumDataValid } }, { name: 'format', schema: { valid: { types: ['string'] } }, data: { valid: formatDataValid }, ext: { formats } }];
 module.exports = properties;
 
 /***/ }),
@@ -1204,7 +1247,6 @@ const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/ba
 /**
  * else关键字处理程序：data对象的条件验证...
  * 举例：if: {}, then: {}, else: {}
- * @param stack 栈
  */
 const elseDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -1226,7 +1268,6 @@ const elseDataValid = function (stack) {
 /**
  * then关键字处理程序：data对象的条件验证...
  * 举例：if: {}, then: {}, else: {}
- * @param stack 栈
  */
 const thenDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -1248,7 +1289,6 @@ const thenDataValid = function (stack) {
 /**
  * if关键字处理程序：data对象的条件验证...
  * 举例：if: {}, then: {}, else: {}
- * @param stack 栈
  */
 const ifDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -1279,11 +1319,10 @@ module.exports = properties;
 
 const types = __webpack_require__(/*! ./type */ "./lib/keywords/type.js");
 const enums = __webpack_require__(/*! ./enum */ "./lib/keywords/enum.js");
-const consts = __webpack_require__(/*! ./const */ "./lib/keywords/const.js");
+const constant = __webpack_require__(/*! ./const */ "./lib/keywords/const.js");
 const multipleOf = __webpack_require__(/*! ./multipleOf */ "./lib/keywords/multipleOf.js");
-const minimum = __webpack_require__(/*! ./minimum */ "./lib/keywords/minimum.js");
-const maximum = __webpack_require__(/*! ./maximum */ "./lib/keywords/maximum.js");
-const strLength = __webpack_require__(/*! ./strLength */ "./lib/keywords/strLength.js");
+const numSize = __webpack_require__(/*! ./numSize */ "./lib/keywords/numSize.js");
+const strLen = __webpack_require__(/*! ./strLen */ "./lib/keywords/strLen.js");
 const pattern = __webpack_require__(/*! ./pattern */ "./lib/keywords/pattern.js");
 const formats = __webpack_require__(/*! ./format */ "./lib/keywords/format.js");
 const items = __webpack_require__(/*! ./items */ "./lib/keywords/items.js");
@@ -1292,7 +1331,7 @@ const uniqueItems = __webpack_require__(/*! ./uniqueItems */ "./lib/keywords/uni
 const contains = __webpack_require__(/*! ./contains */ "./lib/keywords/contains.js");
 const required = __webpack_require__(/*! ./required */ "./lib/keywords/required.js");
 const patternRequired = __webpack_require__(/*! ./patternRequired */ "./lib/keywords/patternRequired.js");
-const objProps = __webpack_require__(/*! ./objProps */ "./lib/keywords/objProps.js");
+const propsNum = __webpack_require__(/*! ./propsNum */ "./lib/keywords/propsNum.js");
 const properties = __webpack_require__(/*! ./properties */ "./lib/keywords/properties.js");
 const dependencies = __webpack_require__(/*! ./dependencies */ "./lib/keywords/dependencies.js");
 const propertyNames = __webpack_require__(/*! ./propertyNames */ "./lib/keywords/propertyNames.js");
@@ -1301,7 +1340,7 @@ const oneOf = __webpack_require__(/*! ./oneOf */ "./lib/keywords/oneOf.js");
 const anyOf = __webpack_require__(/*! ./anyOf */ "./lib/keywords/anyOf.js");
 const allOf = __webpack_require__(/*! ./allOf */ "./lib/keywords/allOf.js");
 const not = __webpack_require__(/*! ./not */ "./lib/keywords/not.js");
-const keys = [...types, ...enums, ...consts, ...multipleOf, ...minimum, ...maximum, ...strLength, ...pattern, ...formats, ...items, ...arrItems, ...uniqueItems, ...contains, ...objProps, ...required, ...patternRequired, ...properties, ...dependencies, ...propertyNames, ...ifs, ...oneOf, ...anyOf, ...allOf, ...not];
+const keys = [...types, ...enums, ...constant, ...multipleOf, ...numSize, ...strLen, ...pattern, ...formats, ...items, ...arrItems, ...uniqueItems, ...contains, ...propsNum, ...required, ...patternRequired, ...properties, ...dependencies, ...propertyNames, ...ifs, ...oneOf, ...anyOf, ...allOf, ...not];
 module.exports = keys;
 
 /***/ }),
@@ -1313,11 +1352,10 @@ module.exports = keys;
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
-let dataLen, additionalLen, sepLen, lastItemsStackItem;
+let dataLen, itemsLen, additionalLen, sepLen, lastItemsStackItem;
 const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/base/common.js");
 /**
  * additionalItems关键字处理程序，当为false时，不允许添加额外多余项，当为{}时检测额外项
- * @param stack 栈
  */
 const additionalItemsDataValid = function (stack) {
   const stackItem = stack[stack.length - 1];
@@ -1329,6 +1367,10 @@ const additionalItemsDataValid = function (stack) {
         if (typeof schema === 'boolean') {
           if (!schema) {
             // 不允许继续了..
+            const { dataPath } = stackItem,
+                  maxItems = itemsLen;
+            stackItem.params = { maxItems };
+            stackItem.message = 'data' + dataPath + ' should NOT have more than ' + maxItems + ' items';
             stackItem.errorItems.push(stackItem);
             stackItem.state = -1;
           } else {
@@ -1336,7 +1378,7 @@ const additionalItemsDataValid = function (stack) {
           }
         } else {
           for (let i = dataLen - 1; i >= sepLen; --i) {
-            schemaProperties({ stack, schemaFrom: stackItem.schema, parent: stackItem, data: data[i], dataFrom: data, dataName: i });
+            schemaProperties({ stack, schemaFrom: stackItem.schema, parent: stackItem, data: data[i], dataFrom: data, dataIndex: i });
           }
           stackItem.state++;
         }
@@ -1354,7 +1396,6 @@ const additionalItemsDataValid = function (stack) {
  * 举例：items: 3
  * 符合：data: [3, 4, 5]
  * 不符合: [1, 2]
- * @param stack 栈
  */
 const itemsDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -1368,16 +1409,16 @@ const itemsDataValid = function (stack) {
         if (useSameItem) {
           lastItemsStackItem = null;
           for (let i = dataLen - 1; i >= 0; --i) {
-            schemaProperties({ stack, schemaFrom: stackItem.schema[0], parent: stackItem, data: data[i], dataFrom: data, dataName: i });
+            schemaProperties({ stack, schemaFrom: stackItem.schema[0], parent: stackItem, data: data[i], dataFrom: data, dataIndex: i });
           }
         } else {
-          const { schema } = stackItem,
-                itemsLen = schema.length,
-                minLen = Math.min(dataLen, itemsLen);
+          const { schema } = stackItem;
+          itemsLen = schema.length;
+          const minLen = Math.min(dataLen, itemsLen);
           additionalLen = dataLen - minLen;
           sepLen = dataLen - additionalLen;
           for (let i = sepLen - 1; i >= 0; --i) {
-            schemaProperties({ stack, schemaFrom: stackItem.schema[i], parent: stackItem, data: data[i], dataFrom: data, dataName: i });
+            schemaProperties({ stack, schemaFrom: stackItem.schema[i], parent: stackItem, data: data[i], dataFrom: data, dataIndex: i });
           }
           lastItemsStackItem = stackItem;
         }
@@ -1397,129 +1438,6 @@ module.exports = items;
 
 /***/ }),
 
-/***/ "./lib/keywords/maximum.js":
-/*!*********************************!*\
-  !*** ./lib/keywords/maximum.js ***!
-  \*********************************/
-/*! no static exports found */
-/***/ (function(module, exports) {
-
-let isExclusiveMaximum, lastExclusiveMaximumStackItem;
-/**
- * maximum关键字处理程序：data值的是否小于等于schema（exclusiveMaximum时不能等于）
- * 举例：maximum: 3
- * 符合：data: [1, 2, 3]
- * 不符合: [4, 5, 6]
- * @param stack 栈
- */
-const maximumDataValid = function (stack) {
-  const stackItem = stack[stack.length - 1],
-        { data, schema } = stackItem;
-  if (typeof data === 'number') {
-    let ok = false;
-    // schemaFrom, schemaPath, parent三者有一个相同都代表来自同一个上级，说明是与当前maximum是兄弟的then
-    if (isExclusiveMaximum && lastExclusiveMaximumStackItem.parent === stackItem.parent) {
-      // 小于模式
-      ok = data < schema;
-    } else {
-      // 小于等于模式
-      ok = data <= schema;
-    }
-    if (!ok) {
-      stackItem.errorItems.push(stackItem);
-    }
-  }
-  stackItem.state = -1;
-};
-/**
- * exclusiveMaximum关键字处理程序：data值的是否小于schema
- * 举例：exclusiveMaximum: 3
- * 符合：data: [1, 2]
- * 不符合: [3, 4, 5, 6]
- * @param stack 栈
- */
-const exclusiveMaximumDataValid = function (stack) {
-  const stackItem = stack[stack.length - 1],
-        { data, schema } = stackItem;
-  const tp = typeof schema;
-  if (tp === 'number') {
-    if (typeof data === 'number') {
-      if (data >= schema) {
-        stackItem.errorItems.push(stackItem);
-      }
-    }
-  } else {
-    isExclusiveMaximum = schema;
-    lastExclusiveMaximumStackItem = stackItem;
-  }
-  stackItem.state = -1;
-};
-const maximum = [{ name: 'maximum', schema: { valid: { types: ['number'] } }, data: { valid: maximumDataValid } }, { name: 'exclusiveMaximum', schema: { valid: { types: ['number', 'boolean'] } }, data: { valid: exclusiveMaximumDataValid } }];
-module.exports = maximum;
-
-/***/ }),
-
-/***/ "./lib/keywords/minimum.js":
-/*!*********************************!*\
-  !*** ./lib/keywords/minimum.js ***!
-  \*********************************/
-/*! no static exports found */
-/***/ (function(module, exports) {
-
-let isExclusiveMinimum, lastExclusiveMinimumStackItem;
-/**
- * minimum关键字处理程序：data值的是否大于等于schema（exclusiveMaximum时不能等于）
- * 举例：minimum: 3
- * 符合：data: [3, 4, 5]
- * 不符合: [1, 2]
- * @param stack 栈
- */
-const minimumDataValid = function (stack) {
-  const stackItem = stack[stack.length - 1],
-        { data, schema } = stackItem;
-  if (typeof data === 'number') {
-    let ok = false;
-    if (isExclusiveMinimum && lastExclusiveMinimumStackItem.parent === stackItem.parent) {
-      // 大于模式
-      ok = data > schema;
-    } else {
-      // 大于等于模式
-      ok = data >= schema;
-    }
-    if (!ok) {
-      stackItem.errorItems.push(stackItem);
-    }
-  }
-  stackItem.state = -1;
-};
-/**
- * exclusiveMinimum关键字处理程序：data值的是否大于schema
- * 举例：exclusiveMinimum: 3
- * 符合：data: [4, 5]
- * 不符合: [1, 2, 3]
- * @param stack 栈
- */
-const exclusiveMinimumDataValid = function (stack) {
-  const stackItem = stack[stack.length - 1],
-        { data, schema } = stackItem;
-  const tp = typeof schema;
-  if (tp === 'number') {
-    if (typeof data === 'number') {
-      if (data <= schema) {
-        stackItem.errorItems.push(stackItem);
-      }
-    }
-  } else {
-    isExclusiveMinimum = schema;
-    lastExclusiveMinimumStackItem = stackItem;
-  }
-  stackItem.state = -1;
-};
-const minimum = [{ name: 'minimum', schema: { valid: { types: ['number'] } }, data: { valid: minimumDataValid } }, { name: 'exclusiveMinimum', schema: { valid: { types: ['number', 'boolean'] } }, data: { valid: exclusiveMinimumDataValid } }];
-module.exports = minimum;
-
-/***/ }),
-
 /***/ "./lib/keywords/multipleOf.js":
 /*!************************************!*\
   !*** ./lib/keywords/multipleOf.js ***!
@@ -1532,13 +1450,15 @@ module.exports = minimum;
  * 举例：multipleOf: 1.5
  * 符合：data: [1.5, 3, 6]
  * 不符合: [1, 2, 3, 4]
- * @param stack 栈
  */
 const dataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
         { data, schema } = stackItem;
   if (typeof data === 'number') {
     if (data % schema !== 0) {
+      const { dataPath } = stackItem;
+      stackItem.params = { multipleOf: schema };
+      stackItem.message = 'data' + dataPath + ' should be multiple of ' + schema;
       stackItem.errorItems.push(stackItem);
     }
   }
@@ -1568,27 +1488,23 @@ const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/ba
 /**
  * not关键字处理程序：data对象的验证结果反转...
  * 举例：not: xxx
- * @param stack 栈
  */
 const dataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
         { state } = stackItem;
   switch (state) {
     case 0:
-      // 加入not信息
       schemaProperties({ stack, schemaFrom: stackItem.schema, parent: stackItem });
       stackItem.state++;
       break;
     case 1:
-      // 判断not结果
       if (stackItem.errorItems.length > 0) {
-        // 如果有错，删除错误
-        // stackItem.errorItems.splice(0, stackItem.errorItems.length);
-        stackItem.state = -2; // 置状态小于0，代表已经完成所有的过程
+        stackItem.state = -2;
       } else {
-        // 如果无错，添加错误...
+        const { dataPath } = stackItem;
+        stackItem.message = 'data' + dataPath + ' should NOT be valid';
         stackItem.errorItems.push(stackItem);
-        stackItem.state = -1; // 置状态小于0，代表已经完成所有的过程
+        stackItem.state = -1;
       }
       break;
   }
@@ -1598,69 +1514,115 @@ module.exports = properties;
 
 /***/ }),
 
-/***/ "./lib/keywords/objProps.js":
-/*!**********************************!*\
-  !*** ./lib/keywords/objProps.js ***!
-  \**********************************/
+/***/ "./lib/keywords/numSize.js":
+/*!*********************************!*\
+  !*** ./lib/keywords/numSize.js ***!
+  \*********************************/
 /*! no static exports found */
 /***/ (function(module, exports) {
 
+let isExclusiveMinimum, lastExclusiveMinimumStackItem;
 /**
- * maxProperties关键字处理程序：data对象属性数量最大值
- * 举例：maxProperties: 2
- * 符合：data: [{}, {"a": 1}, {"a": 1, "b": 2}]
- * 不符合: data: [{"a": 1, "b": 2, "c": 3}]
- * @param stack 栈
+ * minimum关键字处理程序：data值的是否大于等于schema（exclusiveMaximum时不能等于）
+ * 举例：minimum: 3
+ * 符合：data: [3, 4, 5]
+ * 不符合: [1, 2]
  */
-const maxPropertiesDataValid = function (stack) {
+const minimumDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
         { data, schema } = stackItem;
-  if (data && typeof data === 'object' && !Array.isArray(data)) {
-    let len = 0,
-        err = false;
-    for (const n in data) {
-      if (data.hasOwnProperty(n)) {
-        len++;
-        if (len > schema) {
-          err = true;
-          break;
-        }
-      }
-    }
-    if (err) {
+  if (typeof data === 'number') {
+    const exclusive = isExclusiveMinimum && lastExclusiveMinimumStackItem.parent === stackItem.parent;
+    if (!(exclusive ? data > schema : data >= schema)) {
+      const { dataPath } = stackItem,
+            comparison = exclusive ? '>=' : '>',
+            minimum = schema;
+      stackItem.params = { comparison, minimum, exclusive };
+      stackItem.message = 'data' + dataPath + ' should be ' + comparison + ' ' + minimum;
       stackItem.errorItems.push(stackItem);
     }
   }
   stackItem.state = -1;
 };
 /**
- * minProperties关键字处理程序：data字符串长度最大值
- * 举例：minProperties: 2
- * 符合：data: [{"a": 1, "b": 2}, {"a": 1, "b": 2, "c": 3}]
- * 不符合: data: [{}, {"a": 1}]
- * @param stack 栈
+ * exclusiveMinimum关键字处理程序：data值的是否大于schema
+ * 举例：exclusiveMinimum: 3
+ * 符合：data: [4, 5]
+ * 不符合: [1, 2, 3]
  */
-const minPropertiesDataValid = function (stack) {
+const exclusiveMinimumDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
         { data, schema } = stackItem;
-  if (data && typeof data === 'object' && !Array.isArray(data)) {
-    let len = 0;
-    for (const n in data) {
-      if (data.hasOwnProperty(n)) {
-        len++;
+  const tp = typeof schema;
+  if (tp === 'number') {
+    if (typeof data === 'number') {
+      if (data <= schema) {
+        const { dataPath } = stackItem,
+              comparison = '<',
+              exclusiveMinimum = schema;
+        stackItem.params = { comparison, exclusiveMinimum, exclusive: true };
+        stackItem.message = 'data' + dataPath + ' should be ' + comparison + ' ' + exclusiveMinimum;
+        stackItem.errorItems.push(stackItem);
       }
     }
-    if (len < schema) {
+  } else {
+    isExclusiveMinimum = schema;
+    lastExclusiveMinimumStackItem = stackItem;
+  }
+  stackItem.state = -1;
+};
+let isExclusiveMaximum, lastExclusiveMaximumStackItem;
+/**
+ * maximum关键字处理程序：data值的是否小于等于schema（exclusiveMaximum时不能等于）
+ * 举例：maximum: 3
+ * 符合：data: [1, 2, 3]
+ * 不符合: [4, 5, 6]
+ */
+const maximumDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
+  if (typeof data === 'number') {
+    const exclusive = isExclusiveMaximum && lastExclusiveMaximumStackItem.parent === stackItem.parent;
+    if (!(exclusive ? data < schema : data <= schema)) {
+      const { dataPath } = stackItem,
+            comparison = exclusive ? '<=' : '<',
+            maximum = schema;
+      stackItem.params = { comparison, maximum, exclusive };
+      stackItem.message = 'data' + dataPath + ' should be ' + comparison + ' ' + maximum;
       stackItem.errorItems.push(stackItem);
     }
   }
   stackItem.state = -1;
 };
-const valid = function (val) {
-  return val >= 0 && val % 1 === 0;
+/**
+ * exclusiveMaximum关键字处理程序：data值的是否小于schema
+ * 举例：exclusiveMaximum: 3
+ * 符合：data: [1, 2]
+ * 不符合: [3, 4, 5, 6]
+ */
+const exclusiveMaximumDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
+  const tp = typeof schema;
+  if (tp === 'number') {
+    if (typeof data === 'number') {
+      if (data >= schema) {
+        const { dataPath } = stackItem,
+              comparison = '>',
+              exclusiveMaximum = schema;
+        stackItem.params = { comparison, exclusiveMaximum, exclusive: true };
+        stackItem.message = 'data' + dataPath + ' should be ' + comparison + ' ' + exclusiveMaximum;
+        stackItem.errorItems.push(stackItem);
+      }
+    }
+  } else {
+    isExclusiveMaximum = schema;
+    lastExclusiveMaximumStackItem = stackItem;
+  }
+  stackItem.state = -1;
 };
-const strLength = [{ name: 'maxProperties', schema: { valid: { types: ['number'], value: valid } }, data: { valid: maxPropertiesDataValid } }, { name: 'minProperties', schema: { valid: { types: ['number'], value: valid } }, data: { valid: minPropertiesDataValid } }];
-module.exports = strLength;
+const numSize = [{ name: 'minimum', schema: { valid: { types: ['number'] } }, data: { valid: minimumDataValid } }, { name: 'exclusiveMinimum', schema: { valid: { types: ['number', 'boolean'] } }, data: { valid: exclusiveMinimumDataValid } }, { name: 'maximum', schema: { valid: { types: ['number'] } }, data: { valid: maximumDataValid } }, { name: 'exclusiveMaximum', schema: { valid: { types: ['number', 'boolean'] } }, data: { valid: exclusiveMaximumDataValid } }];
+module.exports = numSize;
 
 /***/ }),
 
@@ -1677,7 +1639,6 @@ const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/ba
  * 举例：oneOf: [{"maximum": 3}, {"type": "integer"}]
  * 符合：data: 1.5, 2.5, 4, 5, any non-number
  * 不符合：data: 2, 3, 4.5, 5.5
- * @param stack 栈
  */
 const dataValid = function (stack) {
   // 全部检测完再判断
@@ -1713,6 +1674,8 @@ const dataValid = function (stack) {
           }
         }
         if (!haveOk) {
+          const { dataPath } = stackItem;
+          stackItem.message = 'data' + dataPath + ' should match some schema in oneOf';
           stackItem.errorItems.push(stackItem);
           stackItem.state = -1;
         } else {
@@ -1739,7 +1702,6 @@ module.exports = properties;
  * 举例：pattern: ['^[abc]+$']
  * 符合：data: "a", "abc", "cde"
  * 不符合: data: "d", "abd", "def", "123", ""
- * @param stack 栈
  */
 const dataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -1754,6 +1716,9 @@ const dataValid = function (stack) {
       }
     }
     if (!valid) {
+      const { dataPath } = stackItem;
+      stackItem.params = { pattern: schema };
+      stackItem.message = 'data' + dataPath + ' should be match to one of the pattern';
       stackItem.errorItems.push(stackItem);
     }
   }
@@ -1776,23 +1741,25 @@ module.exports = pattern;
  * 举例：patternRequired: ["f.*o", "b.*r"]
  * 符合：data: [{ "foo": 1, "bar": 2 }, { "foobar": 3 }]
  * 不符合: data: [{}, { "foo": 1 }, { "bar": 2 }]
- * @param stack 栈
  */
 const dataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
         { data, schema } = stackItem;
   if (data && typeof data === 'object' && !Array.isArray(data)) {
     for (const val of schema) {
-      const reg = new RegExp(val);
-      if (reg) {
+      const pattern = typeof val === 'string' ? new RegExp(val) : val;
+      if (pattern) {
         let hasOk = false;
         for (const name in data) {
-          if (data.hasOwnProperty(name) && reg.test(name)) {
+          if (data.hasOwnProperty(name) && pattern.test(name)) {
             hasOk = true;
             break;
           }
         }
         if (!hasOk) {
+          const { dataPath } = stackItem;
+          stackItem.params = { pattern: schema };
+          stackItem.message = 'data' + dataPath + ' should have property match to one of the pattern';
           stackItem.errorItems.push(stackItem);
           break;
         }
@@ -1817,7 +1784,6 @@ let doProps, doPatternProps, lastPropertiesStackItem, lastPatternPropertiesStack
 const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/base/common.js");
 /**
  * additionalProperties关键字处理程序，当为false时，不允许添加额外多余项，当为{}时检测额外项
- * @param stack 栈
  */
 const additionalPropertiesDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -1842,11 +1808,12 @@ const additionalPropertiesDataValid = function (stack) {
         const { schema } = stackItem;
         if (typeof schema === 'boolean') {
           if (!schema) {
+            const { dataPath } = stackItem;
+            stackItem.params = {};
+            stackItem.message = 'data' + dataPath + ' data should NOT have additional properties';
             stackItem.errorItems.push(stackItem);
-            stackItem.state = -1;
-          } else {
-            stackItem.state = -1;
           }
+          stackItem.state = -1;
         } else {
           for (let i = addLen - 1; i >= 0; --i) {
             const propName = addProps[i];
@@ -1868,7 +1835,6 @@ const additionalPropertiesDataValid = function (stack) {
  * 举例：{"patternProperties":{"^fo.*$":{"type":"string"},"^ba.*$":{"type":"number"}}}
  * 符合：data: [{}, {"foo": "a"}, {"foo": "a", "bar": 1}]
  * 不符合: data: [{"foo": 1}, {"foo": "a", "bar": "b"}]
- * @param stack 栈
  */
 const patternPropertiesDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -1925,7 +1891,6 @@ const patternPropertiesValid = function (val) {
  * 举例：{"properties":{"foo":{"type":"string"},"bar":{"type":"number","minimum":2}}}
  * 符合：data: [{}, {"foo": "a"}, {"foo": "a", "bar": 2}]
  * 不符合: data: [{"foo": 1}, {"foo": "a", "bar": 1}]
- * @param stack 栈
  */
 const propertiesDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -1978,7 +1943,6 @@ const { schemaProperties } = __webpack_require__(/*! ../base/common */ "./lib/ba
  * 举例：{"propertyNames":{"foo":{"type":"string"},"bar":{"type":"number","minimum":2}}}
  * 符合：data: [{}, {"foo": "a"}, {"foo": "a", "bar": 2}]
  * 不符合: data: [{"foo": 1}, {"foo": "a", "bar": 1}]
- * @param stack 栈
  */
 const dataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -2005,12 +1969,90 @@ const dataValid = function (stack) {
       }
       break;
     case 1:
+      if (stackItem.errorItems.length > 0) {
+        const { dataPath } = stackItem;
+        stackItem.params = {};
+        stackItem.message = 'data' + dataPath + ' property name should all valid';
+        stackItem.errorItems = [stackItem];
+      }
       stackItem.state = -1;
       break;
   }
 };
 const propertyNames = [{ name: 'propertyNames', schema: { valid: { types: ['object'] } }, data: { valid: dataValid } }];
 module.exports = propertyNames;
+
+/***/ }),
+
+/***/ "./lib/keywords/propsNum.js":
+/*!**********************************!*\
+  !*** ./lib/keywords/propsNum.js ***!
+  \**********************************/
+/*! no static exports found */
+/***/ (function(module, exports) {
+
+/**
+ * maxProperties关键字处理程序：data对象属性数量最大值
+ * 举例：maxProperties: 2
+ * 符合：data: [{}, {"a": 1}, {"a": 1, "b": 2}]
+ * 不符合: data: [{"a": 1, "b": 2, "c": 3}]
+ */
+const maxPropertiesDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    let len = 0,
+        err = false;
+    for (const n in data) {
+      if (data.hasOwnProperty(n)) {
+        len++;
+        if (len > schema) {
+          err = true;
+          break;
+        }
+      }
+    }
+    if (err) {
+      const { dataPath } = stackItem,
+            maxProperties = schema;
+      stackItem.params = { maxProperties };
+      stackItem.message = 'data' + dataPath + ' should NOT have less than ' + maxProperties + ' properties';
+      stackItem.errorItems.push(stackItem);
+    }
+  }
+  stackItem.state = -1;
+};
+/**
+ * minProperties关键字处理程序：data字符串长度最大值
+ * 举例：minProperties: 2
+ * 符合：data: [{"a": 1, "b": 2}, {"a": 1, "b": 2, "c": 3}]
+ * 不符合: data: [{}, {"a": 1}]
+ */
+const minPropertiesDataValid = function (stack) {
+  const stackItem = stack[stack.length - 1],
+        { data, schema } = stackItem;
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    let len = 0;
+    for (const n in data) {
+      if (data.hasOwnProperty(n)) {
+        len++;
+      }
+    }
+    if (len < schema) {
+      const { dataPath } = stackItem,
+            minProperties = schema;
+      stackItem.params = { minProperties };
+      stackItem.message = 'data' + dataPath + ' should NOT have more than ' + minProperties + ' properties';
+      stackItem.errorItems.push(stackItem);
+    }
+  }
+  stackItem.state = -1;
+};
+const valid = function (val) {
+  return val >= 0 && val % 1 === 0;
+};
+const strLength = [{ name: 'maxProperties', schema: { valid: { types: ['number'], value: valid } }, data: { valid: maxPropertiesDataValid } }, { name: 'minProperties', schema: { valid: { types: ['number'], value: valid } }, data: { valid: minPropertiesDataValid } }];
+module.exports = strLength;
 
 /***/ }),
 
@@ -2026,7 +2068,6 @@ module.exports = propertyNames;
  * 举例：required: ["a", "b"]
  * 符合：data: [{"a": 1, "b": 2}, {"a": 1, "b": 2, "c": 3}]
  * 不符合: data: [{}, {"a": 1}, {"c": 3, "d":4}]
- * @param stack 栈
  */
 const dataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -2034,6 +2075,9 @@ const dataValid = function (stack) {
   if (data && typeof data === 'object' && !Array.isArray(data)) {
     for (const val of schema) {
       if (!data.hasOwnProperty(val)) {
+        const { dataPath } = stackItem;
+        stackItem.params = { required: schema };
+        stackItem.message = 'data' + dataPath + ' should have required property ' + schema.toString();
         stackItem.errorItems.push(stackItem);
         break;
       }
@@ -2046,10 +2090,10 @@ module.exports = required;
 
 /***/ }),
 
-/***/ "./lib/keywords/strLength.js":
-/*!***********************************!*\
-  !*** ./lib/keywords/strLength.js ***!
-  \***********************************/
+/***/ "./lib/keywords/strLen.js":
+/*!********************************!*\
+  !*** ./lib/keywords/strLen.js ***!
+  \********************************/
 /*! no static exports found */
 /***/ (function(module, exports) {
 
@@ -2058,13 +2102,16 @@ module.exports = required;
  * 举例：maxLength: 5
  * 符合：data: ["abc", "abcd", "abcde"]
  * 不符合: data: ["abcdef"]
- * @param stack 栈
  */
 const maxLengthDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
         { data, schema } = stackItem;
   if (typeof data === 'string') {
     if (data.length > schema) {
+      const { dataPath } = stackItem,
+            maxLength = schema;
+      stackItem.params = { maxLength };
+      stackItem.message = 'data' + dataPath + ' NOT be longer than ' + maxLength + ' characters';
       stackItem.errorItems.push(stackItem);
     }
   }
@@ -2075,13 +2122,16 @@ const maxLengthDataValid = function (stack) {
  * 举例：minLength: 3
  * 符合：data: ["abc", "abcd", "abcde"]
  * 不符合: data: ["ab", "a"]
- * @param stack 栈
  */
 const minLengthDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
         { data, schema } = stackItem;
   if (typeof data === 'string') {
     if (data.length < schema) {
+      const { dataPath } = stackItem,
+            minLength = schema;
+      stackItem.params = { minLength };
+      stackItem.message = 'data' + dataPath + ' NOT be shorter than ' + minLength + ' characters';
       stackItem.errorItems.push(stackItem);
     }
   }
@@ -2090,8 +2140,8 @@ const minLengthDataValid = function (stack) {
 const valid = function (val) {
   return val >= 0 && val % 1 === 0;
 };
-const strLength = [{ name: 'maxLength', schema: { valid: { types: ['number'], value: valid } }, data: { valid: maxLengthDataValid } }, { name: 'minLength', schema: { valid: { types: ['number'], value: valid } }, data: { valid: minLengthDataValid } }];
-module.exports = strLength;
+const strLen = [{ name: 'maxLength', schema: { valid: { types: ['number'], value: valid } }, data: { valid: maxLengthDataValid } }, { name: 'minLength', schema: { valid: { types: ['number'], value: valid } }, data: { valid: minLengthDataValid } }];
+module.exports = strLen;
 
 /***/ }),
 
@@ -2124,7 +2174,6 @@ const types = {
  * 举例：type: ['string', 'number']
  * 符合：data: 1, 100, 'a', 'abc'
  * 不符合: data: {}, null
- * @param stack 栈
  */
 const dataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
@@ -2142,14 +2191,14 @@ const dataValid = function (stack) {
     }
   }
   if (!valid) {
+    const { dataPath } = stackItem;
+    stackItem.params = { type: schema };
+    stackItem.message = 'data' + dataPath + ' should be ' + schema.toString();
     stackItem.errorItems.push(stackItem);
   }
   stackItem.state = -1;
 };
-const dataError = function (stackItem) {
-  stackItem.message = 'hi';
-};
-const type = [{ name: 'type', schema: { array: true, valid: { types: ['string'] } }, data: { valid: dataValid, error: dataError }, ext: { types } }];
+const type = [{ name: 'type', schema: { array: true, valid: { types: ['string'] } }, data: { valid: dataValid }, ext: { types } }];
 module.exports = type;
 
 /***/ }),
@@ -2168,13 +2217,15 @@ const uniqueItem = nebUtil.array.uniqueItem;
  * 举例：uniqueItems: true
  * 符合：data: [[], [1, 2, 3], [1, "a"]]
  * 不符合: data: [[1, 1, 2], [1, {"a": "b", "b": "c"}, {"b": "c", "a": "b"}]
- * @param stack 栈
  */
 const uniqueItemsDataValid = function (stack) {
   const stackItem = stack[stack.length - 1],
         { data, schema } = stackItem;
   if (Array.isArray(data) && schema) {
     if (!uniqueItem(data)) {
+      const { dataPath } = stackItem;
+      stackItem.params = {};
+      stackItem.message = 'data' + dataPath + ' should NOT have duplicate items';
       stackItem.errorItems.push(stackItem);
     }
   }
@@ -2550,6 +2601,93 @@ module.exports = common;
 
 /***/ }),
 
+/***/ "./lib/date/index.js":
+/*!***************************!*\
+  !*** ./lib/date/index.js ***!
+  \***************************/
+/*! no static exports found */
+/***/ (function(module, exports) {
+
+const replaceReg = /(yyyy|yy|MM?|dd?|HH?|ss?|mm?)/g,
+      stringToDateRegs = {
+  "yyyy": [{ num: 4, reg: /yyyy/ }, { num: 2, reg: /yy/ }],
+  "MM": [{ num: 2, reg: /MM/ }, { num: 1, reg: /M/ }],
+  "dd": [{ num: 2, reg: /dd/ }, { num: 1, reg: /d/ }],
+  "HH": [{ num: 2, reg: /HH/ }, { num: 1, reg: /H/ }],
+  "mm": [{ num: 2, reg: /mm/ }, { num: 1, reg: /m/ }],
+  "ss": [{ num: 2, reg: /ss/ }, { num: 1, reg: /s/ }]
+},
+      hrReg = /-/g;
+/**
+ * 从日期/时间获取格式化字符串
+ * @param date {Date}
+ * @param format {String} 格式化format "yyyy-MM-dd HH:mm:ss"
+ * @returns {String}
+ */
+const toFormatString = function (date, format) {
+  if (!date) return "";
+  format = format || "yyyy-MM-dd HH:mm:ss";
+  date = new Date(date);
+  if (!(date instanceof Date)) return "";
+  const dict = {
+    "yyyy": date.getFullYear(),
+    "yy": (date.getFullYear() + "").substr(2),
+    "M": date.getMonth() + 1,
+    "d": date.getDate(),
+    "H": date.getHours(),
+    "m": date.getMinutes(),
+    "s": date.getSeconds(),
+    "MM": ("" + (date.getMonth() + 101)).substr(1),
+    "dd": ("" + (date.getDate() + 100)).substr(1),
+    "HH": ("" + (date.getHours() + 100)).substr(1),
+    "mm": ("" + (date.getMinutes() + 100)).substr(1),
+    "ss": ("" + (date.getSeconds() + 100)).substr(1)
+  };
+  return format.replace(replaceReg, function () {
+    return dict[arguments[0]];
+  });
+};
+/**
+ * 从格式化字符串获取日期/时间
+ * @param dateStr {String} 日期/时间字符串
+ * @param format {String} 格式化format  默认"yyyy-MM-dd HH:mm:ss"
+ * @returns {*}
+ */
+const fromFormatString = function (dateStr, format) {
+  if (format) {
+    if (dateStr.length < format.length) {
+      return null;
+    }
+    const date = { "yyyy": 0, "MM": 0, "dd": 0, "HH": 0, "mm": 0, "ss": 0 };
+    let attr, testRegs, index, i, testLen, num;
+    for (attr in stringToDateRegs) {
+      testRegs = stringToDateRegs[attr];
+      for (i = 0, testLen = testRegs.length; i < testLen; ++i) {
+        if ((index = format.search(testRegs[i].reg)) !== -1) {
+          num = testRegs[i].num;
+          date[attr] = dateStr.substr(index, num);
+          if (date[attr]) {
+            date[attr] = parseInt(date[attr]);
+            break;
+          }
+        }
+      }
+    }
+    return new Date(date.yyyy, date.MM - 1, date.dd, date.HH, date.mm, date.ss, 0);
+  }
+  if (dateStr) {
+    if (typeof dateStr === "string") {
+      dateStr = dateStr.replace(hrReg, "/");
+    }
+    return new Date(dateStr);
+  }
+  return new Date();
+};
+const util = { toFormatString, fromFormatString };
+module.exports = util;
+
+/***/ }),
+
 /***/ "./lib/index.js":
 /*!**********************!*\
   !*** ./lib/index.js ***!
@@ -2561,7 +2699,8 @@ const common = __webpack_require__(/*! ./common/index */ "./lib/common/index.js"
 const object = __webpack_require__(/*! ./object/index */ "./lib/object/index.js");
 const string = __webpack_require__(/*! ./string/index */ "./lib/string/index.js");
 const array = __webpack_require__(/*! ./array/index */ "./lib/array/index.js");
-const util = { common, object, string, array };
+const date = __webpack_require__(/*! ./date/index */ "./lib/date/index.js");
+const util = { common, object, string, array, date };
 module.exports = util;
 
 /***/ }),
