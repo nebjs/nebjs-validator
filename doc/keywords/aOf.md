@@ -9,7 +9,7 @@ _schema_:
 ```json
 {
     "oneOf": [
-        { "maximum": 3 },
+        { "numSize": 3 },
         { "type": "integer" }
     ]
 }
@@ -32,7 +32,7 @@ _schema_:
 ```json
 {
     "anyOf": [
-        { "maximum": 3 },
+        { "numSize": 3 },
         { "type": "integer" }
     ]
 }
@@ -55,7 +55,7 @@ _schema_:
 ```json
 {
     "allOf": [
-        { "maximum": 3 },
+        { "numSize": 3 },
         { "type": "integer" }
     ]
 }
