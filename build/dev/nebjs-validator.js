@@ -199,7 +199,7 @@ const schemaProperties = function (props) {
       }
       if (data !== undefined) {
         schemaPath = upSchemaPath + (dataName !== undefined ? '/' + dataName : dataIndex !== undefined ? '/' + dataIndex : '');
-        dataPath = upSchemaPath + (dataName !== undefined ? '.' + dataName : dataIndex !== undefined ? '[' + dataIndex + ']' : '');
+        dataPath = upDataPath + (dataName !== undefined ? '.' + dataName : dataIndex !== undefined ? '[' + dataIndex + ']' : '');
       } else {
         schemaPath = upSchemaPath;
         dataPath = upDataPath;
