@@ -1,4 +1,4 @@
-const {schemaProperties} = require('../base/common');
+const {schemaProperties} = require('../../core/common');
 /**
  * dependencies关键字处理程序：data对象的子属性验证...
  * 举例：{"dependencies": {"foo": ["bar", "baz"]}}
@@ -34,7 +34,7 @@ const dataValid = function (stack) {
                   }
                 }
               } else if (typeof schema === 'object') {
-                if (schemaProperties({stack, schemaFrom: propSchema, parent: stackItem})) doIt = true;
+                if (schemaProperties(this.context, {stack, schemaFrom: propSchema, parent: stackItem})) doIt = true;
               }
             }
           }

@@ -1,4 +1,4 @@
-const {schemaProperties} = require('../base/common');
+const {schemaProperties} = require('../../core/common');
 /**
  * not关键字处理程序：data对象的验证结果反转...
  * 举例：not: xxx
@@ -7,7 +7,7 @@ const dataValid = function (stack) {
   const stackItem = stack[stack.length - 1], {state} = stackItem;
   switch (state) {
     case 0:
-      schemaProperties({stack, schemaFrom: stackItem.schema, parent: stackItem});
+      schemaProperties(this.context, {stack, schemaFrom: stackItem.schema, parent: stackItem});
       stackItem.state++;
       break;
     case 1:

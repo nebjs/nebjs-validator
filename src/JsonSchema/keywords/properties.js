@@ -1,5 +1,5 @@
 let doProps, doPatternProps, lastPropertiesStackItem, lastPatternPropertiesStackItem;
-const {schemaProperties} = require('../base/common');
+const {schemaProperties} = require('../../core/common');
 /**
  * additionalProperties关键字处理程序，当为false时，不允许添加额外多余项，当为{}时检测额外项
  */
@@ -34,7 +34,7 @@ const additionalPropertiesDataValid = function (stack) {
         } else {
           for (let i = addLen - 1; i >= 0; --i) {
             const propName = addProps[i];
-            schemaProperties({stack, schemaFrom: stackItem.schema, parent: stackItem, data: data[propName], dataFrom: data, dataName: propName});
+            schemaProperties(this.context, {stack, schemaFrom: stackItem.schema, parent: stackItem, data: data[propName], dataFrom: data, dataName: propName});
           }
           stackItem.state++;
         }
@@ -67,7 +67,7 @@ const patternPropertiesDataValid = function (stack) {
               const reg = new RegExp(propName);
               for (const dataName in data) {
                 if (data.hasOwnProperty(dataName) && reg.test(dataName)) {
-                  if (schemaProperties({stack, schemaFrom: schema[propName], parent: stackItem, data: data[dataName], dataFrom: data, dataName})) {
+                  if (schemaProperties(this.context, {stack, schemaFrom: schema[propName], parent: stackItem, data: data[dataName], dataFrom: data, dataName})) {
                     doIt = true;
                     doPatternProps[dataName] = true;
                   }
@@ -119,7 +119,7 @@ const propertiesDataValid = function (stack) {
         if (schema && typeof schema === 'object' && !Array.isArray(schema)) {
           for (const propName in schema) {
             if (schema.hasOwnProperty(propName) && data.hasOwnProperty(propName)) {
-              if (schemaProperties({stack, schemaFrom: schema[propName], parent: stackItem, data: data[propName], dataFrom: data, dataName: propName})) {
+              if (schemaProperties(this.context, {stack, schemaFrom: schema[propName], parent: stackItem, data: data[propName], dataFrom: data, dataName: propName})) {
                 doIt = true;
                 doProps[propName] = true;
               }

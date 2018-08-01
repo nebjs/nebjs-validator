@@ -578,7 +578,7 @@ const dataValid = function (stack) {
       }
       break;
     case 1:
-      schemaProperties({stack, schemaFrom: schema[runSchemaIndex], parent: stackItem});
+      schemaProperties(this.context, {stack, schemaFrom: schema[runSchemaIndex], parent: stackItem});
       stackItem.runSchemaIndex++;
       stackItem.state++;
       break;
@@ -776,7 +776,7 @@ const dataValid = function (stack) {
       }
       break;
     case 1:
-      schemaProperties({stack, schemaFrom: schema, parent: stackItem, data: data[runDataIndex], dataFrom: data, dataName: runDataIndex});
+      schemaProperties(this.context, {stack, schemaFrom: schema, parent: stackItem, data: data[runDataIndex], dataFrom: data, dataName: runDataIndex});
       stackItem.runDataIndex++;
       stackItem.state++;
       break;

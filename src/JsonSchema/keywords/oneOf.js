@@ -1,4 +1,4 @@
-const {schemaProperties} = require('../base/common');
+const {schemaProperties} = require('../../core/common');
 /**
  * oneOf关键字处理程序：data对象的多个组合验证结果中有一个成功，则成功（所有组合都会执行）...
  * 举例：oneOf: [{"maximum": 3}, {"type": "integer"}]
@@ -19,7 +19,7 @@ const dataValid = function (stack) {
       }
       break;
     case 1:
-      schemaProperties({stack, schemaFrom: schema[runSchemaIndex], parent: stackItem});
+      schemaProperties(this.context, {stack, schemaFrom: schema[runSchemaIndex], parent: stackItem});
       stackItem.runSchemaIndex++;
       stackItem.state++;
       break;

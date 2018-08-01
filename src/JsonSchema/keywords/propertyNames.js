@@ -1,4 +1,4 @@
-const {schemaProperties} = require('../base/common');
+const {schemaProperties} = require('../../core/common');
 /**
  * propertyNames关键字处理程序：data对象的子属性名称的验证...
  * 举例：{"propertyNames":{"foo":{"type":"string"},"bar":{"type":"number","minimum":2}}}
@@ -15,7 +15,7 @@ const dataValid = function (stack) {
         if (schema && typeof schema === 'object' && !Array.isArray(schema)) {
           for (const dataName in data) {
             if (data.hasOwnProperty(dataName)) {
-              if (schemaProperties({stack, schemaFrom: schema, parent: stackItem, data: dataName, dataFrom: data})) {
+              if (schemaProperties(this.context, {stack, schemaFrom: schema, parent: stackItem, data: dataName, dataFrom: data})) {
                 doIt = true;
               }
             }

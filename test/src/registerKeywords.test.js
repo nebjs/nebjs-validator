@@ -1,5 +1,5 @@
 const expect = require('chai').expect;
-const validator = require('../../lib/index');
+const validator = require('../../src/index');
 describe('validator.Schema.registerKeywords 【注册关键字】测试', function () {
   describe('registerKeywords 输出异常', function () {
     it('registerKeywords 传参错误会异常', function () {

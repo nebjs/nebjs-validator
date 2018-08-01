@@ -1,4 +1,4 @@
-const {schemaProperties} = require('../base/common');
+const {schemaProperties} = require('../../core/common');
 /**
  * contains关键字处理程序：data数组中的任一元素值是否符合规则
  * 举例：contains: { "type": "integer" }
@@ -27,7 +27,7 @@ const dataValid = function (stack) {
       }
       break;
     case 1:
-      schemaProperties({stack, schemaFrom: schema, parent: stackItem, data: data[runDataIndex], dataFrom: data, dataName: runDataIndex});
+      schemaProperties(this.context, {stack, schemaFrom: schema, parent: stackItem, data: data[runDataIndex], dataFrom: data, dataName: runDataIndex});
       stackItem.runDataIndex++;
       stackItem.state++;
       break;
@@ -77,7 +77,7 @@ const dataValid = function (stack) {
       }
       break;
     case 1:
-      schemaProperties({stack, schemaFrom: schema, parent: stackItem, data: data[runDataIndex], dataFrom: data, dataName: runDataIndex});
+      schemaProperties(this.context, {stack, schemaFrom: schema, parent: stackItem, data: data[runDataIndex], dataFrom: data, dataName: runDataIndex});
       stackItem.runDataIndex++;
       stackItem.state++;
       break;

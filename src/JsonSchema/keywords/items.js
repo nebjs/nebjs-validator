@@ -1,5 +1,5 @@
 let dataLen, itemsLen, additionalLen, sepLen, lastItemsStackItem;
-const {schemaProperties} = require('../base/common');
+const {schemaProperties} = require('../../core/common');
 /**
  * additionalItems关键字处理程序，当为false时，不允许添加额外多余项，当为{}时检测额外项
  */
@@ -22,7 +22,7 @@ const additionalItemsDataValid = function (stack) {
           }
         } else {
           for (let i = dataLen - 1; i >= sepLen; --i) {
-            schemaProperties({stack, schemaFrom: stackItem.schema, parent: stackItem, data: data[i], dataFrom: data, dataIndex: i});
+            schemaProperties(this.context, {stack, schemaFrom: stackItem.schema, parent: stackItem, data: data[i], dataFrom: data, dataIndex: i});
           }
           stackItem.state++;
         }
@@ -52,7 +52,7 @@ const itemsDataValid = function (stack) {
         if (useSameItem) {
           lastItemsStackItem = null;
           for (let i = dataLen - 1; i >= 0; --i) {
-            schemaProperties({stack, schemaFrom: stackItem.schema[0], parent: stackItem, data: data[i], dataFrom: data, dataIndex: i});
+            schemaProperties(this.context, {stack, schemaFrom: stackItem.schema[0], parent: stackItem, data: data[i], dataFrom: data, dataIndex: i});
           }
         } else {
           const {schema} = stackItem;
@@ -61,7 +61,7 @@ const itemsDataValid = function (stack) {
           additionalLen = dataLen - minLen;
           sepLen = dataLen - additionalLen;
           for (let i = sepLen - 1; i >= 0; --i) {
-            schemaProperties({stack, schemaFrom: stackItem.schema[i], parent: stackItem, data: data[i], dataFrom: data, dataIndex: i});
+            schemaProperties(this.context, {stack, schemaFrom: stackItem.schema[i], parent: stackItem, data: data[i], dataFrom: data, dataIndex: i});
           }
           lastItemsStackItem = stackItem;
         }
