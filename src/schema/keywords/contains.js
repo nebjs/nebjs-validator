@@ -1,4 +1,5 @@
 const {schemaProperties} = require('../../core/common');
+const message = 'data{{dataPath}} should contain a valid item';
 /**
  * contains关键字处理程序：data数组中的任一元素值是否符合规则
  * 举例：contains: { "type": "integer" }
@@ -12,9 +13,6 @@ const dataValid = function (stack) {
     case 0:
       if (Array.isArray(data)) {
         if (data.length === 0) {
-          const {dataPath} = stackItem;
-          stackItem.params = {};
-          stackItem.message = 'data' + dataPath + ' should contain a valid item';
           stackItem.errorItems.push(stackItem);
           stackItem.state = -1;
         } else {
@@ -46,9 +44,6 @@ const dataValid = function (stack) {
           }
         }
         if (!haveOk) {
-          const {dataPath} = stackItem;
-          stackItem.params = {};
-          stackItem.message = 'data' + dataPath + ' should contain a valid item';
           stackItem.errorItems.push(stackItem);
           stackItem.state = -1;
         } else {
@@ -63,9 +58,6 @@ const dataValid = function (stack) {
     case 0:
       if (Array.isArray(data)) {
         if (data.length === 0) {
-          const {dataPath} = stackItem;
-          stackItem.params = {};
-          stackItem.message = 'data' + dataPath + ' should contain a valid item';
           stackItem.errorItems.push(stackItem);
           stackItem.state = -1;
         } else {
@@ -85,9 +77,6 @@ const dataValid = function (stack) {
       if (stackItem.errorItems.length === 0) {
         stackItem.state = -1;
       } else if (runDataIndex === data.length) {
-        const {dataPath} = stackItem;
-        stackItem.params = {};
-        stackItem.message = 'data' + dataPath + ' should contain a valid item';
         stackItem.errorItems.push(stackItem);
         stackItem.state = -1;
       } else {
@@ -98,6 +87,6 @@ const dataValid = function (stack) {
   }
 };
 const contains = [
-  {name: 'contains', schema: {valid: {types: ['object']}}, data: {valid: dataValid}}
+  {name: 'contains', schema: {valid: {types: ['object']}}, data: {valid: dataValid}, ext: {message}}
 ];
 module.exports = contains;

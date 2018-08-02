@@ -1,4 +1,5 @@
 const {schemaProperties} = require('../../core/common');
+const message = 'data{{dataPath}} should match some schema in oneOf';
 /**
  * oneOf关键字处理程序：data对象的多个组合验证结果中有一个成功，则成功（所有组合都会执行）...
  * 举例：oneOf: [{"maximum": 3}, {"type": "integer"}]
@@ -38,8 +39,6 @@ const dataValid = function (stack) {
           }
         }
         if (!haveOk) {
-          const {dataPath} = stackItem;
-          stackItem.message = 'data' + dataPath + ' should match some schema in oneOf';
           stackItem.errorItems.push(stackItem);
           stackItem.state = -1;
         } else {
@@ -50,6 +49,6 @@ const dataValid = function (stack) {
   }
 };
 const properties = [
-  {name: 'oneOf', schema: {array: true, valid: {types: ['object']}}, data: {valid: dataValid}}
+  {name: 'oneOf', schema: {array: true, valid: {types: ['object']}}, data: {valid: dataValid}, ext: {message}}
 ];
 module.exports = properties;

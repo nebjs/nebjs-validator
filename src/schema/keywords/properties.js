@@ -1,5 +1,6 @@
 let doProps, doPatternProps, lastPropertiesStackItem, lastPatternPropertiesStackItem;
 const {schemaProperties} = require('../../core/common');
+const additionalPropertiesMessage = 'data{{dataPath}} should not have additional property';
 /**
  * additionalProperties关键字处理程序，当为false时，不允许添加额外多余项，当为{}时检测额外项
  */
@@ -25,9 +26,6 @@ const additionalPropertiesDataValid = function (stack) {
         const {schema} = stackItem;
         if (typeof schema === 'boolean') {
           if (!schema) {
-            const {dataPath} = stackItem;
-            stackItem.params = {};
-            stackItem.message = 'data' + dataPath + ' data should NOT have additional properties';
             stackItem.errorItems.push(stackItem);
           }
           stackItem.state = -1;
@@ -141,7 +139,7 @@ const propertiesDataValid = function (stack) {
   }
 };
 const properties = [
-  {name: 'additionalProperties', schema: {valid: {types: ['boolean', 'object']}}, data: {valid: additionalPropertiesDataValid}},
+  {name: 'additionalProperties', schema: {valid: {types: ['boolean', 'object']}}, data: {valid: additionalPropertiesDataValid}, ext: {message: additionalPropertiesMessage}},
   {name: 'patternProperties', schema: {valid: {types: ['object'], value: patternPropertiesValid}}, data: {valid: patternPropertiesDataValid}},
   {name: 'properties', schema: {valid: {types: ['object']}}, data: {valid: propertiesDataValid}}
 ];

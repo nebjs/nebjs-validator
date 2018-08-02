@@ -16,7 +16,6 @@ class Keywords extends Data {
   /**
    * 注册Keyword
    * @param keywords
-   * @return {Number}
    * [{
    *  name: '', 注册关键字名称
    *  schema: {
@@ -28,7 +27,7 @@ class Keywords extends Data {
    *  },
    *  data: {
    *    valid: function(stack){}, 关键字验证器
-   *    error: function(stack){}, 关键字错误处理器
+   *    error: function(stackItem){}, 关键字错误处理器
    *  },
    *  ext: {}, 用户扩展信息
    * },..]
@@ -58,6 +57,125 @@ class Keywords extends Data {
       if (!(ext && ext.constructor === Object)) throw new TypeError('keyword ' + name + '\'s ext must be a object');
       this.setData(name, key);
     }
+    return this;
+  }
+
+  /**
+   * 设置关键字Ext
+   * @param keyword
+   * @param attrName/ext:{attrName: attrValue, ..}
+   * @param attrValue
+   */
+  setExt(keyword, attrName, attrValue) {
+    if (typeof keyword !== 'string') throw new TypeError('keyword must be a no-empty string');
+    let key = this.getData(keyword);
+    if (key) {
+      if (typeof attrName === 'string') {
+        key.value.ext[attrName] = attrValue;
+      } else {
+        const ext = attrName;
+        if (!(ext && ext.constructor === Object)) throw new TypeError('ext must be a object');
+        for (attrName in ext) if (ext.hasOwnProperty(attrName)) key.value.ext[attrName] = ext[attrName];
+      }
+    }
+    return this;
+  }
+
+  /**
+   * 获取关键字Ext
+   * @param keyword
+   * @param attrName
+   * @returns {*}
+   */
+  getExt(keyword, attrName) {
+    if (typeof keyword !== 'string') throw new TypeError('keyword must be a no-empty string');
+    let key = this.getData(keyword);
+    if (attrName !== void 0) {
+      if (typeof attrName !== 'string') throw new TypeError('attrName must be a no-empty string');
+      return key.value.ext[attrName];
+    }
+    return key.value.ext;
+  }
+
+  /**
+   * 设置关键字Ext
+   * @param keywordsExt:{keyword: ext:{attrName: attrValue, ..},...}
+   */
+  setExtS(keywordsExt) {
+    if (!(keywordsExt && keywordsExt.constructor === Object)) throw new TypeError('keywordsExt must be a object');
+    for (const keyword in keywordsExt) if (keywordsExt.hasOwnProperty(keyword)) this.setExt(keyword, keywordsExt[keyword]);
+    return this;
+  }
+
+  /**
+   * 拷贝方式设置关键字Ext
+   * @param keywordsExt:{keyword: ext:{attrName: attrValue, ..},...}
+   * @param copyOption
+   */
+  setExtC(keywordsExt, copyOption) {
+    if (!(keywordsExt && keywordsExt.constructor === Object)) throw new TypeError('keywordsExt must be a object');
+    let key;
+    for (const keyword in keywordsExt) {
+      if (keywordsExt.hasOwnProperty(keyword) && (key = this.getData(keyword))) {
+        const ext = keywordsExt[keyword];
+        if (ext.constructor !== Object) throw new TypeError('keywordsExt\'s extValue must be a object');
+        objCopy(key.value.ext[keyword], ext, copyOption);
+      }
+    }
+    return this;
+  }
+
+  /**
+   * 设置关键字Ext
+   * @param attrName
+   * @param keyword/ext:{keyword: attrValue, ..}
+   * @param attrValue
+   */
+  setExtAttr(attrName, keyword, attrValue) {
+    if (typeof attrName !== 'string') throw new TypeError('attrName must be a no-empty string');
+    let key;
+    if (typeof keyword === 'string') {
+      if (key = this.getData(keyword)) key.value.ext[attrName] = attrValue;
+    } else {
+      const ext = keyword;
+      if (!(ext && ext.constructor === Object)) throw new TypeError('ext must be a object');
+      for (keyword in ext) if (ext.hasOwnProperty(keyword) && (key = this.getData(keyword))) key.value.ext[attrName] = ext[keyword];
+    }
+    return this;
+  }
+
+  /**
+   * 设置关键字Ext
+   * @param keywordsExt:{attrName: ext:{keyword: attrValue, ..},...}
+   */
+  setExtAttrS(keywordsExt) {
+    if (!(keywordsExt && keywordsExt.constructor === Object)) throw new TypeError('keywordsExt must be a object');
+    for (const attrName in keywordsExt) if (keywordsExt.hasOwnProperty(attrName)) this.setExtAttr(attrName, keywordsExt[attrName]);
+    return this;
+  }
+
+  /**
+   * 拷贝方式设置关键字Ext
+   * @param keywordsExt:{attrName: ext:{keyword: attrValue, ..},...}
+   * @param copyOption
+   */
+  setExtAttrC(keywordsExt, copyOption) {
+    if (!(keywordsExt && keywordsExt.constructor === Object)) throw new TypeError('keywordsExt must be a object');
+    let key;
+    for (const attrName in keywordsExt) {
+      if (keywordsExt.hasOwnProperty(attrName)) {
+        const ext = keywordsExt[attrName];
+        if (ext.constructor !== Object) throw new TypeError('keywordsExt\'s attrValue must be a object');
+        for (const keyword in ext) {
+          if (ext.hasOwnProperty(keyword) && (key = this.getData(keyword))) {
+            const obj = {};
+            obj[attrName] = ext[keyword];
+            objCopy(key.value.ext[attrName], obj, copyOption);
+          }
+        }
+      }
+    }
+    return this;
   }
 }
 

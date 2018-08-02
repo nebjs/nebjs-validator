@@ -1,3 +1,4 @@
+const message = 'data{{dataPath}} should have property match to one of the pattern';
 /**
  * patternRequired关键字处理程序：data中是否有满足正则条件名称的相应属性...
  * 举例：patternRequired: ["f.*o", "b.*r"]
@@ -18,9 +19,7 @@ const dataValid = function (stack) {
           }
         }
         if (!hasOk) {
-          const {dataPath} = stackItem;
           stackItem.params = {pattern: schema};
-          stackItem.message = 'data' + dataPath + ' should have property match to one of the pattern';
           stackItem.errorItems.push(stackItem);
           break;
         }
@@ -30,6 +29,6 @@ const dataValid = function (stack) {
   stackItem.state = -1;
 };
 const patternRequired = [
-  {name: 'patternRequired', schema: {array: true, valid: {types: ['string']}}, data: {valid: dataValid}}
+  {name: 'patternRequired', schema: {array: true, valid: {types: ['string']}}, data: {valid: dataValid}, ext: {message}}
 ];
 module.exports = patternRequired;

@@ -1,5 +1,6 @@
 let dataLen, itemsLen, additionalLen, sepLen, lastItemsStackItem;
 const {schemaProperties} = require('../../core/common');
+const additionalItemsMessage = 'data{{dataPath}} should not have more than {{params.maxItems}} item';
 /**
  * additionalItems关键字处理程序，当为false时，不允许添加额外多余项，当为{}时检测额外项
  */
@@ -11,10 +12,8 @@ const additionalItemsDataValid = function (stack) {
       if (lastItemsStackItem && lastItemsStackItem.parent === stackItem.parent && additionalLen > 0) {
         const {data, schema} = stackItem;
         if (typeof schema === 'boolean') {
-          if (!schema) {// 不允许继续了..
-            const {dataPath} = stackItem, maxItems = itemsLen;
-            stackItem.params = {maxItems};
-            stackItem.message = 'data' + dataPath + ' should NOT have more than ' + maxItems + ' items';
+          if (!schema) {
+            stackItem.params = {maxItems: itemsLen};
             stackItem.errorItems.push(stackItem);
             stackItem.state = -1;
           } else {
@@ -77,7 +76,7 @@ const itemsDataValid = function (stack) {
   }
 };
 const items = [
-  {name: 'additionalItems', schema: {valid: {types: ['boolean', 'object']}}, data: {valid: additionalItemsDataValid}},
+  {name: 'additionalItems', schema: {valid: {types: ['boolean', 'object']}}, data: {valid: additionalItemsDataValid},ext:{message: additionalItemsMessage}},
   {name: 'items', schema: {array: true, valid: {types: ['object']}}, data: {valid: itemsDataValid}}
 ];
 module.exports = items;

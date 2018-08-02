@@ -1,11 +1,11 @@
 const Context = require('../core/Context');
 const keywords = require('./keywords/index');
 
-class JsonSchemaContext extends Context {
+class SchemaContext extends Context {
   constructor() {
     super();
     this.keywords.register(keywords);
   }
 }
 
-module.exports = JsonSchemaContext;
+module.exports = SchemaContext;

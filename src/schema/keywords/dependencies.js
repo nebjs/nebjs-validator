@@ -1,4 +1,5 @@
 const {schemaProperties} = require('../../core/common');
+const message = 'data{{dataPath}} should be equal to constant';
 /**
  * dependencies关键字处理程序：data对象的子属性验证...
  * 举例：{"dependencies": {"foo": ["bar", "baz"]}}
@@ -27,9 +28,7 @@ const dataValid = function (stack) {
                     }
                   }
                   if (hasError) {
-                    const {dataPath} = stackItem;
                     stackItem.params = {propName, missingProperty: name, dependCount, depend: propSchema, depends: propSchema};
-                    stackItem.message = 'data' + dataPath + ' should be equal to constant';
                     stackItem.errorItems.push(stackItem);
                   }
                 }
@@ -52,6 +51,6 @@ const dataValid = function (stack) {
   }
 };
 const dependencies = [
-  {name: 'dependencies', schema: {valid: {types: ['object']}}, data: {valid: dataValid}}
+  {name: 'dependencies', schema: {valid: {types: ['object']}}, data: {valid: dataValid}, ext: {message}}
 ];
 module.exports = dependencies;

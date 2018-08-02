@@ -1,4 +1,5 @@
 let isExclusiveMinimum, lastExclusiveMinimumStackItem;
+const minimumMessage = 'data{{dataPath}} should be {{params.comparison}} {{params.minimum}}';
 /**
  * minimum关键字处理程序：data值的是否大于等于schema（exclusiveMaximum时不能等于）
  * 举例：minimum: 3
@@ -10,14 +11,13 @@ const minimumDataValid = function (stack) {
   if (typeof data === 'number') {
     const exclusive = isExclusiveMinimum && lastExclusiveMinimumStackItem.parent === stackItem.parent;
     if (!(exclusive ? data > schema : data >= schema)) {
-      const {dataPath} = stackItem, comparison = exclusive ? '>=' : '>', minimum = schema;
-      stackItem.params = {comparison, minimum, exclusive};
-      stackItem.message = 'data' + dataPath + ' should be ' + comparison + ' ' + minimum;
+      stackItem.params = {comparison: exclusive ? '>=' : '>', minimum: schema, exclusive};
       stackItem.errorItems.push(stackItem);
     }
   }
   stackItem.state = -1;
 };
+const exclusiveMinimumMessage = 'data{{dataPath}} should be {{params.comparison}} {{params.exclusiveMinimum}}';
 /**
  * exclusiveMinimum关键字处理程序：data值的是否大于schema
  * 举例：exclusiveMinimum: 3
@@ -30,9 +30,7 @@ const exclusiveMinimumDataValid = function (stack) {
   if (tp === 'number') {
     if (typeof data === 'number') {
       if (data <= schema) {
-        const {dataPath} = stackItem, comparison = '<', exclusiveMinimum = schema;
-        stackItem.params = {comparison, exclusiveMinimum, exclusive: true};
-        stackItem.message = 'data' + dataPath + ' should be ' + comparison + ' ' + exclusiveMinimum;
+        stackItem.params = {comparison: '<', exclusiveMinimum: schema, exclusive: true};
         stackItem.errorItems.push(stackItem);
       }
     }
@@ -43,6 +41,7 @@ const exclusiveMinimumDataValid = function (stack) {
   stackItem.state = -1;
 };
 let isExclusiveMaximum, lastExclusiveMaximumStackItem;
+const maximumMessage = 'data{{dataPath}} should be {{params.comparison}} {{params.maximum}}';
 /**
  * maximum关键字处理程序：data值的是否小于等于schema（exclusiveMaximum时不能等于）
  * 举例：maximum: 3
@@ -54,14 +53,13 @@ const maximumDataValid = function (stack) {
   if (typeof data === 'number') {
     const exclusive = isExclusiveMaximum && lastExclusiveMaximumStackItem.parent === stackItem.parent;
     if (!(exclusive ? data < schema : data <= schema)) {
-      const {dataPath} = stackItem, comparison = exclusive ? '<=' : '<', maximum = schema;
-      stackItem.params = {comparison, maximum, exclusive};
-      stackItem.message = 'data' + dataPath + ' should be ' + comparison + ' ' + maximum;
+      stackItem.params = {comparison: exclusive ? '<=' : '<', maximum: schema, exclusive};
       stackItem.errorItems.push(stackItem);
     }
   }
   stackItem.state = -1;
 };
+const exclusiveMaximumMessage = 'data{{dataPath}} should be {{params.comparison}} {{params.exclusiveMaximum}}';
 /**
  * exclusiveMaximum关键字处理程序：data值的是否小于schema
  * 举例：exclusiveMaximum: 3
@@ -74,9 +72,7 @@ const exclusiveMaximumDataValid = function (stack) {
   if (tp === 'number') {
     if (typeof data === 'number') {
       if (data >= schema) {
-        const {dataPath} = stackItem, comparison = '>', exclusiveMaximum = schema;
-        stackItem.params = {comparison, exclusiveMaximum, exclusive: true};
-        stackItem.message = 'data' + dataPath + ' should be ' + comparison + ' ' + exclusiveMaximum;
+        stackItem.params = {comparison: '>', exclusiveMaximum: schema, exclusive: true};
         stackItem.errorItems.push(stackItem);
       }
     }
@@ -87,9 +83,9 @@ const exclusiveMaximumDataValid = function (stack) {
   stackItem.state = -1;
 };
 const numSize = [
-  {name: 'minimum', schema: {valid: {types: ['number']}}, data: {valid: minimumDataValid}},
-  {name: 'exclusiveMinimum', schema: {valid: {types: ['number', 'boolean']}}, data: {valid: exclusiveMinimumDataValid}},
-  {name: 'maximum', schema: {valid: {types: ['number']}}, data: {valid: maximumDataValid}},
-  {name: 'exclusiveMaximum', schema: {valid: {types: ['number', 'boolean']}}, data: {valid: exclusiveMaximumDataValid}}
+  {name: 'minimum', schema: {valid: {types: ['number']}}, data: {valid: minimumDataValid}, ext: {message: minimumMessage}},
+  {name: 'exclusiveMinimum', schema: {valid: {types: ['number', 'boolean']}}, data: {valid: exclusiveMinimumDataValid}, ext: {message: exclusiveMinimumMessage}},
+  {name: 'maximum', schema: {valid: {types: ['number']}}, data: {valid: maximumDataValid}, ext: {message: maximumMessage}},
+  {name: 'exclusiveMaximum', schema: {valid: {types: ['number', 'boolean']}}, data: {valid: exclusiveMaximumDataValid}, ext: {message: exclusiveMaximumMessage}}
 ];
 module.exports = numSize;

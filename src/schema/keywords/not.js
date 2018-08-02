@@ -1,4 +1,5 @@
 const {schemaProperties} = require('../../core/common');
+const message = 'data{{dataPath}} should not be valid';
 /**
  * not关键字处理程序：data对象的验证结果反转...
  * 举例：not: xxx
@@ -14,8 +15,6 @@ const dataValid = function (stack) {
       if (stackItem.errorItems.length > 0) {
         stackItem.state = -2;
       } else {
-        const {dataPath} = stackItem;
-        stackItem.message = 'data' + dataPath + ' should NOT be valid';
         stackItem.errorItems.push(stackItem);
         stackItem.state = -1;
       }
@@ -23,6 +22,6 @@ const dataValid = function (stack) {
   }
 };
 const properties = [
-  {name: 'not', schema: {array: true, valid: {types: ['object']}}, data: {valid: dataValid}}
+  {name: 'not', schema: {array: true, valid: {types: ['object']}}, data: {valid: dataValid}, ext: {message}}
 ];
 module.exports = properties;

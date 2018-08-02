@@ -1,18 +1,19 @@
 {
-  "name": "neb-validator",
+  "name": "neb-corrector",
   "version": "0.0.1",
-  "description": "json schema validator",
-  "main": "build/dev/nebjs-validator.js",
+  "description": "json schema corrector",
+  "main": "build/dev/nebjs-corrector.js",
   "scripts": {
     "test": "node_modules/.bin/mocha",
     "dev": "node_modules/.bin/webpack --config webpack/dev.config.js"
   },
   "keywords": [
-    "nebjs json schema validator"
+    "nebjs json schema corrector"
   ],
   "author": "nebjs",
   "license": "MIT",
   "dependencies": {
+    "nebjs-template-string-simple": "^1.0.4",
     "nebjs-util": "^1.2.1"
   },
   "devDependencies": {

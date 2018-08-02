@@ -13,8 +13,7 @@
  *  dataIndex: '', 数据来源索引值
  * }
  *
- // 栈结构: keyword, schema, schemaFrom, schemaPath, parent, children, errorItems, state, dataIndex
- // 数据栈结构: dataName, data, dataFrom, dataPath
+ // 栈结构: keyword, schema, schemaFrom, schemaPath, parent, children, errorItems, state, dataIndex, dataName, data, dataFrom, dataPath
  */
 const schemaProperties = function (context, props) {
   const {keywords} = context, regKeys = keywords.list;
@@ -31,9 +30,9 @@ const schemaProperties = function (context, props) {
         upSchemaPath = '';
         upDataPath = '';
       }
-      if (data !== undefined) {
-        schemaPath = upSchemaPath + (dataName !== undefined ? '/' + dataName : dataIndex !== undefined ? '/' + dataIndex : '');
-        dataPath = upDataPath + (dataName !== undefined ? '.' + dataName : dataIndex !== undefined ? '[' + dataIndex + ']' : '');
+      if (data !== void 0) {
+        schemaPath = upSchemaPath + (dataName !== void 0 ? '/' + dataName : dataIndex !== void 0 ? '/' + dataIndex : '');
+        dataPath = upDataPath + (dataName !== void 0 ? '.' + dataName : dataIndex !== void 0 ? '[' + dataIndex + ']' : '');
       } else {
         schemaPath = upSchemaPath;
         dataPath = upDataPath;
@@ -46,9 +45,9 @@ const schemaProperties = function (context, props) {
         const schFrom = schemaFrom[i];
         if (schFrom && schFrom.constructor === Object) {
           for (const {value: regKey} of regKeys) {
-            const keyword = regKey.name;
-            let rawSchema = schFrom[keyword];
-            if (rawSchema !== undefined) {
+            const keyName = regKey.name, keyword = keywords.getData(keyName).value;
+            let rawSchema = schFrom[keyName];
+            if (rawSchema !== void 0) {
               const {array} = regKey.schema;
               const schema = array && !Array.isArray(rawSchema) ? [rawSchema] : rawSchema;
               const stkItem = {
@@ -127,12 +126,10 @@ const validTypes = function (types, data) {
 };
 /**
  * 验证模型
- * @param context {Context} 环境
  * @param stackItem {Object}, 要验证的栈片，不传时默认为栈的栈顶
  */
-const validateSchema = function (context, stackItem) {
-  const {keywords} = context;
-  const {keyword, schema, schemaPath} = stackItem, {schema: optSchema} = keywords.getData(keyword).value, {valid} = optSchema;
+const validateSchema = function (stackItem) {
+  const {keyword, schema, schemaPath} = stackItem, {name: keyName, schema: optSchema} = keyword, {valid} = optSchema;
   if (valid) {
     const {array} = optSchema, {types, value} = valid;
     if (types.length > 0) {
@@ -143,9 +140,9 @@ const validateSchema = function (context, stackItem) {
           isValid = validTypes(types, schema[i]);
         }
       } else isValid = validTypes(types, schema);
-      if (!isValid) throw new TypeError('scheme error, keyword\'s values invalid at "' + schemaPath + keyword + '" by types');
+      if (!isValid) throw new TypeError('scheme error, keyword\'s values invalid at "' + schemaPath + keyName + '" by types');
     }
-    if (value && !value(schema)) throw new TypeError('scheme error, keyword\'s value invalid at "' + schemaPath + '/' + keyword + '" by value');
+    if (value && !value(schema)) throw new TypeError('scheme error, keyword\'s value invalid at "' + schemaPath + '/' + keyName + '" by value');
   }
 };
 module.exports = {validateSchema, schemaProperties};

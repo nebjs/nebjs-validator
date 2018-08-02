@@ -1,3 +1,4 @@
+const maxLengthMessage = 'data{{dataPath}} not be longer than {{params.maxLength}} character';
 /**
  * maxLength关键字处理程序：data字符串长度最大值
  * 举例：maxLength: 5
@@ -8,14 +9,13 @@ const maxLengthDataValid = function (stack) {
   const stackItem = stack[stack.length - 1], {data, schema} = stackItem;
   if (typeof data === 'string') {
     if (data.length > schema) {
-      const {dataPath} = stackItem, maxLength = schema;
-      stackItem.params = {maxLength};
-      stackItem.message = 'data' + dataPath + ' NOT be longer than ' + maxLength + ' characters';
+      stackItem.params = {maxLength: schema};
       stackItem.errorItems.push(stackItem);
     }
   }
   stackItem.state = -1;
 };
+const minLengthMessage = 'data{{dataPath}} not be shorter than {{params.minLength}} character';
 /**
  * minLength关键字处理程序：data字符串长度最大值
  * 举例：minLength: 3
@@ -26,9 +26,7 @@ const minLengthDataValid = function (stack) {
   const stackItem = stack[stack.length - 1], {data, schema} = stackItem;
   if (typeof data === 'string') {
     if (data.length < schema) {
-      const {dataPath} = stackItem, minLength = schema;
-      stackItem.params = {minLength};
-      stackItem.message = 'data' + dataPath + ' NOT be shorter than ' + minLength + ' characters';
+      stackItem.params = {minLength: schema};
       stackItem.errorItems.push(stackItem);
     }
   }
@@ -38,7 +36,7 @@ const valid = function (val) {
   return val >= 0 && val % 1 === 0;
 };
 const strLen = [
-  {name: 'maxLength', schema: {valid: {types: ['number'], value: valid}}, data: {valid: maxLengthDataValid}},
-  {name: 'minLength', schema: {valid: {types: ['number'], value: valid}}, data: {valid: minLengthDataValid}}
+  {name: 'maxLength', schema: {valid: {types: ['number'], value: valid}}, data: {valid: maxLengthDataValid}, ext: {message: maxLengthMessage}},
+  {name: 'minLength', schema: {valid: {types: ['number'], value: valid}}, data: {valid: minLengthDataValid}, ext: {message: minLengthMessage}}
 ];
 module.exports = strLen;

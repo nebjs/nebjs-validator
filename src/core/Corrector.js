@@ -2,9 +2,10 @@ const common = require('./common');
 const {validateSchema, schemaProperties} = common;
 const Context = require('./Context');
 const nebUtil = require('nebjs-util');
-const objPick = nebUtil.object.pick;
+// const objPick = nebUtil.object.pick;
 // const objCopy = nebUtil.object.copy;
 const arrCopy = nebUtil.array.copy;
+const {Parser: TempParser} = require('nebjs-template-string-simple');
 
 /**
  * 分析器类
@@ -31,14 +32,14 @@ class Corrector {
    */
   validate(data) {
     this.data = data;
-    const {context} = this, {keywords} = context, errorItems = this.errorItems = [], stack = [], schemas = this.schemas;
+    const {context} = this, errorItems = this.errorItems = [], stack = [], schemas = this.schemas;
     schemaProperties(context, {stack, schemaFrom: schemas, data, dataFrom: null});
     while (stack.length > 0) {
-      const stackItem = stack[stack.length - 1], {keyword} = stackItem, option = keywords.getData(keyword).value;
+      const stackItem = stack[stack.length - 1], {keyword} = stackItem;
       let {state} = stackItem, pop = false;
       if (!(state < 0)) {
-        const {data} = option, {valid} = data;
-        if (state === 0) validateSchema(context, stackItem);
+        const {data} = keyword, {valid} = data;
+        if (state === 0) validateSchema(stackItem);
         if (valid) {
           valid.call(this, stack);
           state = stackItem.state;
@@ -58,8 +59,8 @@ class Corrector {
     }
     if (errorItems.length > 0) {
       for (const stackItem of errorItems) {
-        const {keyword} = stackItem, option = keywords.getData(keyword).value, {data} = option, {error} = data;
-        if (error) error.call(this, stackItem, option);
+        const {keyword} = stackItem, {data} = keyword, {error} = data;
+        if (error) error.call(this, stackItem);
       }
       return false;
     }
@@ -71,17 +72,20 @@ class Corrector {
    * @param option 输出配置
    */
   writeOutErrors(option = {}) {
-    const validator = this, {errorItems} = validator;
-    const {simple = true} = option;
+    const corrector = this, {errorItems} = corrector;
     let out;
-    if (simple) {
-      out = arrCopy([], errorItems, {
-        multi: true, filter: function (array, stackItems, stackItem/*, index*/) {
-          const obj = {};
-          return {value: objPick(obj, stackItem, {pick: ['keyword', 'message', 'params']})};
+    out = arrCopy([], errorItems, {
+      multi: true, filter: function (array, stackItems, stackItem/*, index*/) {
+        const obj = {};
+        let msg = stackItem.message = stackItem.keyword.ext.message;
+        obj.keyword = stackItem.keyword.name;
+        if (msg) {
+          if (typeof msg === 'function') msg = msg(stackItem);
+          if (typeof msg === 'string') obj.message = msg ? new TempParser(stackItem).parse(msg) : '';
         }
-      })
-    }
+        return {value: obj};
+      }
+    });
     // 开始处理错误...
     return out;
   }

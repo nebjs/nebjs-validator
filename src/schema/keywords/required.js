@@ -1,3 +1,4 @@
+const message = 'data{{dataPath}} should have required property {{params.required}}';
 /**
  * required关键字处理程序：data中是否有相应的属性...
  * 举例：required: ["a", "b"]
@@ -9,9 +10,7 @@ const dataValid = function (stack) {
   if (data && typeof data === 'object' && !Array.isArray(data)) {
     for (const val of schema) {
       if (!data.hasOwnProperty(val)) {
-        const {dataPath} = stackItem;
         stackItem.params = {required: schema};
-        stackItem.message = 'data' + dataPath + ' should have required property ' + schema.toString();
         stackItem.errorItems.push(stackItem);
         break;
       }
@@ -20,6 +19,6 @@ const dataValid = function (stack) {
   stackItem.state = -1;
 };
 const required = [
-  {name: 'required', schema: {array: true, valid: {types: ['string']}}, data: {valid: dataValid}}
+  {name: 'required', schema: {array: true, valid: {types: ['string']}}, data: {valid: dataValid}, ext: {message}}
 ];
 module.exports = required;

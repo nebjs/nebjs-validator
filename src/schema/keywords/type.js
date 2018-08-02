@@ -15,6 +15,7 @@ const types = {
   },
   string: "string",
 };
+const message = 'data{{dataPath}} should be {{params.type}}';
 /**
  * type关键字处理程序：data值的类型是否在指定的schemas中
  * 举例：type: ['string', 'number']
@@ -36,14 +37,12 @@ const dataValid = function (stack) {
     }
   }
   if (!valid) {
-    const {dataPath} = stackItem;
     stackItem.params = {type: schema};
-    stackItem.message = 'data' + dataPath + ' should be ' + schema.toString();
     stackItem.errorItems.push(stackItem);
   }
   stackItem.state = -1;
 };
 const type = [
-  {name: 'type', schema: {array: true, valid: {types: ['string']}}, data: {valid: dataValid}, ext: {types}}
+  {name: 'type', schema: {array: true, valid: {types: ['string']}}, data: {valid: dataValid}, ext: {types, message}}
 ];
 module.exports = type;

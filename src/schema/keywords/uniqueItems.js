@@ -1,5 +1,6 @@
 const nebUtil = require('nebjs-util');
 const uniqueItem = nebUtil.array.uniqueItem;
+const message = 'data{{dataPath}} should not have duplicate item';
 /**
  * uniqueItems关键字处理程序：data数组无重复元素
  * 举例：uniqueItems: true
@@ -10,15 +11,12 @@ const uniqueItemsDataValid = function (stack) {
   const stackItem = stack[stack.length - 1], {data, schema} = stackItem;
   if (Array.isArray(data) && schema) {
     if (!uniqueItem(data)) {
-      const {dataPath} = stackItem;
-      stackItem.params = {};
-      stackItem.message = 'data' + dataPath + ' should NOT have duplicate items';
       stackItem.errorItems.push(stackItem);
     }
   }
   stackItem.state = -1;
 };
 const strLength = [
-  {name: 'uniqueItems', schema: {valid: {types: ['boolean']}}, data: {valid: uniqueItemsDataValid}}
+  {name: 'uniqueItems', schema: {valid: {types: ['boolean']}}, data: {valid: uniqueItemsDataValid}, ext: {message}}
 ];
 module.exports = strLength;

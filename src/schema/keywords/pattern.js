@@ -1,3 +1,4 @@
+const message = 'data{{dataPath}} should be match to one of the pattern';
 /**
  * pattern关键字处理程序：data字符串值的格式满足pattern对应的正则表达式
  * 举例：pattern: ['^[abc]+$']
@@ -16,15 +17,13 @@ const dataValid = function (stack) {
       }
     }
     if (!valid) {
-      const {dataPath} = stackItem;
       stackItem.params = {pattern: schema};
-      stackItem.message = 'data' + dataPath + ' should be match to one of the pattern';
       stackItem.errorItems.push(stackItem);
     }
   }
   stackItem.state = -1;
 };
 const pattern = [
-  {name: 'pattern', schema: {array: true, valid: {types: ['regexp']}}, data: {valid: dataValid}}
+  {name: 'pattern', schema: {array: true, valid: {types: ['regexp']}}, data: {valid: dataValid}, ext: {message}}
 ];
 module.exports = pattern;

@@ -1,3 +1,4 @@
+const maxPropertiesMessage = 'data{{dataPath}} should not have more than {{params.maxProperties}} property';
 /**
  * maxProperties关键字处理程序：data对象属性数量最大值
  * 举例：maxProperties: 2
@@ -18,14 +19,13 @@ const maxPropertiesDataValid = function (stack) {
       }
     }
     if (err) {
-      const {dataPath} = stackItem, maxProperties = schema;
-      stackItem.params = {maxProperties};
-      stackItem.message = 'data' + dataPath + ' should NOT have less than ' + maxProperties + ' properties';
+      stackItem.params = {maxProperties: schema};
       stackItem.errorItems.push(stackItem);
     }
   }
   stackItem.state = -1;
 };
+const minPropertiesMessage = 'data{{dataPath}} should not have less than {{params.minProperties}} property';
 /**
  * minProperties关键字处理程序：data字符串长度最大值
  * 举例：minProperties: 2
@@ -42,9 +42,7 @@ const minPropertiesDataValid = function (stack) {
       }
     }
     if (len < schema) {
-      const {dataPath} = stackItem, minProperties = schema;
-      stackItem.params = {minProperties};
-      stackItem.message = 'data' + dataPath + ' should NOT have more than ' + minProperties + ' properties';
+      stackItem.params = {minProperties: schema};
       stackItem.errorItems.push(stackItem);
     }
   }
@@ -54,7 +52,7 @@ const valid = function (val) {
   return val >= 0 && val % 1 === 0;
 };
 const strLength = [
-  {name: 'maxProperties', schema: {valid: {types: ['number'], value: valid}}, data: {valid: maxPropertiesDataValid}},
-  {name: 'minProperties', schema: {valid: {types: ['number'], value: valid}}, data: {valid: minPropertiesDataValid}}
+  {name: 'maxProperties', schema: {valid: {types: ['number'], value: valid}}, data: {valid: maxPropertiesDataValid}, ext: {message: maxPropertiesMessage}},
+  {name: 'minProperties', schema: {valid: {types: ['number'], value: valid}}, data: {valid: minPropertiesDataValid}, ext: {message: minPropertiesMessage}}
 ];
 module.exports = strLength;

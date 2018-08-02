@@ -1,4 +1,4 @@
-let lastIfstackItem, isErrors;
+let lastIfStackItem, isErrors;
 const {schemaProperties} = require('../../core/common');
 /**
  * else关键字处理程序：data对象的条件验证...
@@ -8,7 +8,7 @@ const elseDataValid = function (stack) {
   const stackItem = stack[stack.length - 1], {state} = stackItem;
   switch (state) {
     case 0:
-      if (lastIfstackItem && lastIfstackItem.parent === stackItem.parent && isErrors) {
+      if (lastIfStackItem && lastIfStackItem.parent === stackItem.parent && isErrors) {
         schemaProperties(this.context, {stack, schemaFrom: stackItem.schema, parent: stackItem});
         stackItem.state++;
       } else {
@@ -28,7 +28,7 @@ const thenDataValid = function (stack) {
   const stackItem = stack[stack.length - 1], {state} = stackItem;
   switch (state) {
     case 0:
-      if (lastIfstackItem && lastIfstackItem.parent === stackItem.parent && !isErrors) {
+      if (lastIfStackItem && lastIfStackItem.parent === stackItem.parent && !isErrors) {
         schemaProperties(this.context, {stack, schemaFrom: stackItem.schema, parent: stackItem});
         stackItem.state++;
       } else {
@@ -52,7 +52,7 @@ const ifDataValid = function (stack) {
       stackItem.state++;
       break;
     case 1:
-      lastIfstackItem = stackItem;
+      lastIfStackItem = stackItem;
       isErrors = stackItem.errorItems.length > 0;
       stackItem.state = -2;
       break;

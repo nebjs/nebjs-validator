@@ -4,7 +4,7 @@ const serverConfig = {
   ...config,
   output: {
     path: path.resolve(__dirname, '../build/dev'),
-    filename: 'nebjs-validator.js',
+    filename: 'nebjs-corrector.js',
     libraryTarget: 'umd',
   },
   mode: "development",

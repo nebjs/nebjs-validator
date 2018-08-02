@@ -1,4 +1,5 @@
 const {schemaProperties} = require('../../core/common');
+const message = 'data{{dataPath}} property name should all valid';
 /**
  * propertyNames关键字处理程序：data对象的子属性名称的验证...
  * 举例：{"propertyNames":{"foo":{"type":"string"},"bar":{"type":"number","minimum":2}}}
@@ -30,9 +31,6 @@ const dataValid = function (stack) {
       break;
     case 1:
       if (stackItem.errorItems.length > 0) {
-        const {dataPath} = stackItem;
-        stackItem.params = {};
-        stackItem.message = 'data' + dataPath + ' property name should all valid';
         stackItem.errorItems = [stackItem];
       }
       stackItem.state = -1;
@@ -40,5 +38,6 @@ const dataValid = function (stack) {
   }
 };
 const propertyNames = [
-  {name: 'propertyNames', schema: {valid: {types: ['object']}}, data: {valid: dataValid}}];
+  {name: 'propertyNames', schema: {valid: {types: ['object']}}, data: {valid: dataValid}, ext: {message}}
+];
 module.exports = propertyNames;

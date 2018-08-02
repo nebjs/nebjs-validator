@@ -1,3 +1,4 @@
+const message = 'data{{dataPath}} should be multiple of {{params.multipleOf}}';
 /**
  * multipleOf关键字处理程序：data值的是否是schema的倍数
  * 举例：multipleOf: 1.5
@@ -8,9 +9,7 @@ const dataValid = function (stack) {
   const stackItem = stack[stack.length - 1], {data, schema} = stackItem;
   if (typeof data === 'number') {
     if (data % schema !== 0) {
-      const {dataPath} = stackItem;
       stackItem.params = {multipleOf: schema};
-      stackItem.message = 'data' + dataPath + ' should be multiple of ' + schema;
       stackItem.errorItems.push(stackItem);
     }
   }
@@ -23,6 +22,6 @@ const multipleOf = [{
         return val > 0;
       }
     }
-  }, data: {valid: dataValid}
+  }, data: {valid: dataValid}, ext: {message}
 }];
 module.exports = multipleOf;

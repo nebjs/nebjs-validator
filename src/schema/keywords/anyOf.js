@@ -1,4 +1,5 @@
 const {schemaProperties} = require('../../core/common');
+const message = 'data{{dataPath}} should match some schema in anyOf';
 /**
  * anyOf关键字处理程序：data对象的多个组合验证结果中有一个成功，则成功（先检测到一个成功，则后续不再执行）...
  * 举例：anyOf: [{"maximum": 3}, {"type": "integer"}]
@@ -26,8 +27,6 @@ const dataValid = function (stack) {
       if (stackItem.errorItems.length === 0) {
         stackItem.state = -1;
       } else if (runSchemaIndex === schema.length) {
-        const {dataPath} = stackItem;
-        stackItem.message = 'data' + dataPath +' should match some schema in anyOf';
         stackItem.errorItems.push(stackItem);
         stackItem.state = -1;
       } else {
@@ -38,6 +37,6 @@ const dataValid = function (stack) {
   }
 };
 const properties = [
-  {name: 'anyOf', schema: {array: true, valid: {types: ['object']}}, data: {valid: dataValid}}
+  {name: 'anyOf', schema: {array: true, valid: {types: ['object']}}, data: {valid: dataValid}, ext: {message}}
 ];
 module.exports = properties;

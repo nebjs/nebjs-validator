@@ -62,7 +62,7 @@ const formats = (() => {
   // var URL = /^(?:(?:https?|ftp):\/\/)(?:\S+(?::\S*)?@)?(?:(?!10(?:\.\d{1,3}){3})(?!127(?:\.\d{1,3}){3})(?!169\.254(?:\.\d{1,3}){2})(?!192\.168(?:\.\d{1,3}){2})(?!172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})(?:[1-9]\d?|1\d\d|2[01]\d|22[0-3])(?:\.(?:1?\d{1,2}|2[0-4]\d|25[0-5])){2}(?:\.(?:[1-9]\d?|1\d\d|2[0-4]\d|25[0-4]))|(?:(?:[a-z\u{00a1}-\u{ffff}0-9]+-?)*[a-z\u{00a1}-\u{ffff}0-9]+)(?:\.(?:[a-z\u{00a1}-\u{ffff}0-9]+-?)*[a-z\u{00a1}-\u{ffff}0-9]+)*(?:\.(?:[a-z\u{00a1}-\u{ffff}]{2,})))(?::\d{2,5})?(?:\/[^\s]*)?$/iu;
   const URL = /^(?:(?:http[s\u017F]?|ftp):\/\/)(?:(?:[\0-\x08\x0E-\x1F!-\x9F\xA1-\u167F\u1681-\u1FFF\u200B-\u2027\u202A-\u202E\u2030-\u205E\u2060-\u2FFF\u3001-\uD7FF\uE000-\uFEFE\uFF00-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])+(?::(?:[\0-\x08\x0E-\x1F!-\x9F\xA1-\u167F\u1681-\u1FFF\u200B-\u2027\u202A-\u202E\u2030-\u205E\u2060-\u2FFF\u3001-\uD7FF\uE000-\uFEFE\uFF00-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*)?@)?(?:(?!10(?:\.[0-9]{1,3}){3})(?!127(?:\.[0-9]{1,3}){3})(?!169\.254(?:\.[0-9]{1,3}){2})(?!192\.168(?:\.[0-9]{1,3}){2})(?!172\.(?:1[6-9]|2[0-9]|3[01])(?:\.[0-9]{1,3}){2})(?:[1-9][0-9]?|1[0-9][0-9]|2[01][0-9]|22[0-3])(?:\.(?:1?[0-9]{1,2}|2[0-4][0-9]|25[0-5])){2}(?:\.(?:[1-9][0-9]?|1[0-9][0-9]|2[0-4][0-9]|25[0-4]))|(?:(?:(?:[0-9KSa-z\xA1-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])+-?)*(?:[0-9KSa-z\xA1-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])+)(?:\.(?:(?:[0-9KSa-z\xA1-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])+-?)*(?:[0-9KSa-z\xA1-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])+)*(?:\.(?:(?:[KSa-z\xA1-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){2,})))(?::[0-9]{2,5})?(?:\/(?:[\0-\x08\x0E-\x1F!-\x9F\xA1-\u167F\u1681-\u1FFF\u200B-\u2027\u202A-\u202E\u2030-\u205E\u2060-\u2FFF\u3001-\uD7FF\uE000-\uFEFE\uFF00-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*)?$/i;
 
-  // email (sources from jsen validator):
+  // email (sources from jsen corrector):
   // http://stackoverflow.com/questions/201323/using-a-regular-expression-to-validate-an-email-address#answer-8829363
   // http://www.w3.org/TR/html5/forms.html#valid-e-mail-address (search for 'willful violation')
   // const FAST_EMAIL = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i;
@@ -118,6 +118,7 @@ const formatsNumber = (() => {
   return {date, datetime: date, 'date-time': date, time};
 })();
 let lastFormat, isFormatExclusiveMaximum, lastFormatExclusiveMaximumStackItem, isFormatExclusiveMinimum, lastFormatExclusiveMinimumStackItem;
+const formatMinimumMessage = 'data{{dataPath}} should be {{params.comparison}} {{params.formatMinimum}}';
 /**
  * formatMinimum关键字处理程序：data值的是否大于等于schema（formatExclusiveMaximum时不能等于）
  * 举例：formatMinimum: 3
@@ -131,15 +132,14 @@ const formatMinimumDataValid = function (stack) {
     if (fnf && typeof fnf === 'function') {
       const exclusive = isFormatExclusiveMinimum && lastFormatExclusiveMinimumStackItem.parent === stackItem.parent;
       if (!(exclusive ? fnf(data) > fnf(schema) : fnf(data) >= fnf(schema))) {
-        const {dataPath} = stackItem, comparison = exclusive ? '>=' : '>', formatMinimum = schema;
-        stackItem.params = {comparison, formatMinimum, exclusive};
-        stackItem.message = 'data' + dataPath + ' should be ' + comparison + ' ' + formatMinimum;
+        stackItem.params = {comparison: exclusive ? '>=' : '>', formatMinimum: schema, exclusive};
         stackItem.errorItems.push(stackItem);
       }
     }
   }
   stackItem.state = -1;
 };
+const formatExclusiveMinimumMessage = 'data{{dataPath}} should be {{params.comparison}} {{params.formatExclusiveMinimum}}';
 /**
  * formatExclusiveMinimum关键字处理程序：data值的是否大于schema
  * 举例：formatExclusiveMinimum: 3
@@ -154,9 +154,7 @@ const formatExclusiveMinimumDataValid = function (stack) {
       const fnf = formatsNumber[lastFormat];
       if (fnf && typeof fnf === 'function') {
         if (fnf(data) <= fnf(schema)) {
-          const {dataPath} = stackItem, comparison = '<', formatExclusiveMinimum = schema;
-          stackItem.params = {comparison, formatExclusiveMinimum, exclusive: true};
-          stackItem.message = 'data' + dataPath + ' should be ' + comparison + ' ' + formatExclusiveMinimum;
+          stackItem.params = {comparison: '<', formatExclusiveMinimum: schema, exclusive: true};
           stackItem.errorItems.push(stackItem);
         }
       }
@@ -167,6 +165,7 @@ const formatExclusiveMinimumDataValid = function (stack) {
   }
   stackItem.state = -1;
 };
+const formatMaximumMessage = 'data{{dataPath}} should be {{params.comparison}} {{params.formatMaximum}}';
 /**
  * formatMaximum关键字处理程序：data值的是否小于等于schema（formatExclusiveMaximum时不能等于）
  * 举例：formatMaximum: 3
@@ -180,15 +179,14 @@ const formatMaximumDataValid = function (stack) {
     if (fnf && typeof fnf === 'function') {
       const exclusive = isFormatExclusiveMaximum && lastFormatExclusiveMaximumStackItem.parent === stackItem.parent;
       if (!(exclusive ? fnf(data) < fnf(schema) : fnf(data) <= fnf(schema))) {
-        const {dataPath} = stackItem, comparison = exclusive ? '<=' : '<', formatMaximum = schema;
-        stackItem.params = {comparison, formatMaximum, exclusive};
-        stackItem.message = 'data' + dataPath + ' should be ' + comparison + ' ' + formatMaximum;
+        stackItem.params = {comparison: exclusive ? '<=' : '<', formatMaximum: schema, exclusive};
         stackItem.errorItems.push(stackItem);
       }
     }
   }
   stackItem.state = -1;
 };
+const formatExclusiveMaximumMessage = 'data{{dataPath}} should be {{params.comparison}} {{params.formatExclusiveMaximum}}';
 /**
  * formatExclusiveMaximum关键字处理程序：data值的是否小于schema
  * 举例：formatExclusiveMaximum: 3
@@ -203,9 +201,7 @@ const formatExclusiveMaximumDataValid = function (stack) {
       const fnf = formatsNumber[lastFormat];
       if (fnf && typeof fnf === 'function') {
         if (fnf(data) >= fnf(schema)) {
-          const {dataPath} = stackItem, comparison = '>', formatExclusiveMaximum = schema;
-          stackItem.params = {comparison, formatExclusiveMaximum, exclusive: true};
-          stackItem.message = 'data' + dataPath + ' should be ' + comparison + ' ' + formatExclusiveMaximum;
+          stackItem.params = {comparison: '>', formatExclusiveMaximum: schema, exclusive: true};
           stackItem.errorItems.push(stackItem);
         }
       }
@@ -216,6 +212,7 @@ const formatExclusiveMaximumDataValid = function (stack) {
   }
   stackItem.state = -1;
 };
+const formatMessage = 'data{{dataPath}} should match format {{params.format}}';
 /**
  * format关键字处理程序：data字符串格式验证...
  * 举例：format: ['phone']
@@ -234,9 +231,7 @@ const formatDataValid = function (stack) {
         ok = fmt(data);
       }
       if (!ok) {
-        const {dataPath} = stackItem;
         stackItem.params = {format: schema};
-        stackItem.message = 'data' + dataPath + ' should match format ' + schema.toString();
         stackItem.errorItems.push(stackItem);
         lastFormat = null;
       } else {
@@ -247,10 +242,10 @@ const formatDataValid = function (stack) {
   stackItem.state = -1;
 };
 const properties = [
-  {name: 'formatMinimum', schema: {valid: {types: ['string']}}, data: {valid: formatMinimumDataValid}},
-  {name: 'formatExclusiveMinimum', schema: {valid: {types: ['string', 'boolean']}}, data: {valid: formatExclusiveMinimumDataValid}},
-  {name: 'formatMaximum', schema: {valid: {types: ['string'],}}, data: {valid: formatMaximumDataValid}},
-  {name: 'formatExclusiveMaximum', schema: {valid: {types: ['string', 'boolean']}}, data: {valid: formatExclusiveMaximumDataValid}},
-  {name: 'format', schema: {valid: {types: ['string']}}, data: {valid: formatDataValid}, ext: {formats}}
+  {name: 'formatMinimum', schema: {valid: {types: ['string']}}, data: {valid: formatMinimumDataValid}, ext: {message: formatMinimumMessage}},
+  {name: 'formatExclusiveMinimum', schema: {valid: {types: ['string', 'boolean']}}, data: {valid: formatExclusiveMinimumDataValid}, ext: {message: formatExclusiveMinimumMessage}},
+  {name: 'formatMaximum', schema: {valid: {types: ['string'],}}, data: {valid: formatMaximumDataValid}, ext: {message: formatMaximumMessage}},
+  {name: 'formatExclusiveMaximum', schema: {valid: {types: ['string', 'boolean']}}, data: {valid: formatExclusiveMaximumDataValid}, ext: {message: formatExclusiveMaximumMessage}},
+  {name: 'format', schema: {valid: {types: ['string']}}, data: {valid: formatDataValid}, ext: {formats, message: formatMessage}}
 ];
 module.exports = properties;

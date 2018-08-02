@@ -1,5 +1,6 @@
 const nebUtil = require('nebjs-util');
 const equal = nebUtil.common.equal;
+const message = 'data{{dataPath}} should be equal to one of the enum values';
 /**
  * enum关键字处理程序：data值的是否在指定的schemas中
  * 举例：enum: [ 2, "foo", {"foo": "bar" }, [1, 2, 3] ]
@@ -16,14 +17,12 @@ const dataValid = function (stack) {
     }
   }
   if (!valid) {
-    const {dataPath} = stackItem;
     stackItem.params = {enum: schema};
-    stackItem.message = 'data' + dataPath + ' should be equal to one of the enum values';
     stackItem.errorItems.push(stackItem);
   }
   stackItem.state = -1;
 };
 const enums = [
-  {name: 'enum', schema: {}, data: {valid: dataValid}}
+  {name: 'enum', schema: {}, data: {valid: dataValid}, ext: {message}}
 ];
 module.exports = enums;

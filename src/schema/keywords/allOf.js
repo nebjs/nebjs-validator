@@ -1,4 +1,5 @@
 const {schemaProperties} = require('../../core/common');
+const message = 'data{{dataPath}} should match all schema in allOf';
 /**
  * allOf关键字处理程序：data对象的多个组合验证结果全部成功，则成功（所有组合都会执行）...
  * 举例：allOf: [{"maximum": 3}, {"type": "integer"}]
@@ -39,7 +40,6 @@ const dataValid = function (stack) {
         }
         if (haveErr) {
           const {dataPath} = stackItem;
-          stackItem.message = 'data' + dataPath + ' should match some schema in allOf';
           stackItem.errorItems.push(stackItem);
           stackItem.state = -1;
         } else {
@@ -67,8 +67,6 @@ const dataValid = function (stack) {
       break;
     case 2:
       if (stackItem.errorItems.length > 0) {
-        stackItem.message = 'data' + dataPath + ' should match some schema in allOf';
-        stackItem.errorItems.push(stackItem);
         stackItem.errorItems.push(stackItem);
         stackItem.state = -1;
       } else if (runSchemaIndex === schema.length) {
@@ -80,6 +78,6 @@ const dataValid = function (stack) {
   }*/
 };
 const properties = [
-  {name: 'allOf', schema: {array: true, valid: {types: ['object']}}, data: {valid: dataValid}}
+  {name: 'allOf', schema: {array: true, valid: {types: ['object']}}, data: {valid: dataValid}, ext: {message}}
 ];
 module.exports = properties;
